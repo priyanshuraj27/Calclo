@@ -1,19 +1,36 @@
-import React, { useState } from 'react';
-import { Icon } from './Icon';
-import { Switch } from './Switch';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Icon } from "./Icon";
+import { Switch } from "./Switch";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
+import { apiData } from "../api/client.js";
+import {
+  weeklyRulesToAvailability,
+  availabilityToWeeklyRules,
+  summarizeAvailabilitySubtitle,
+} from "../api/scheduleMappers.js";
+
+const isMongoId = (id) => /^[a-f\d]{24}$/i.test(id || "");
 
 /**
  * Pixel-perfect replica of the Cal.com Schedule Editor page based on the provided screenshot.
- * Implements the 2-column layout, detailed headers, and specific action buttons.
  */
-export function AvailabilityPage({ onNavigate }) {
+export function AvailabilityPage({ onNavigate, scheduleId }) {
   const [parent] = useAutoAnimate();
   const [title, setTitle] = useState("9-5");
   const [timezone, setTimezone] = useState("Europe/London");
   const [isDefault, setIsDefault] = useState(false);
-  
-  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const [subtitle, setSubtitle] = useState("Mon - Fri, 9:00 AM - 5:00 PM");
+  const skipSave = useRef(true);
+
+  const days = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
   const [availability, setAvailability] = useState({
     Monday: [{ from: "9:00am", to: "5:00pm" }],
     Tuesday: [{ from: "9:00am", to: "5:00pm" }],
@@ -22,16 +39,130 @@ export function AvailabilityPage({ onNavigate }) {
     Friday: [{ from: "9:00am", to: "5:00pm" }],
   });
 
+  const recomputeSubtitle = useCallback((av) => {
+    try {
+      setSubtitle(summarizeAvailabilitySubtitle(av));
+    } catch {
+      setSubtitle("Mon - Fri, 9:00 AM - 5:00 PM");
+    }
+  }, []);
+
+  useEffect(() => {
+    recomputeSubtitle(availability);
+  }, [availability, recomputeSubtitle]);
+
+  useEffect(() => {
+    if (scheduleId === "new" || !isMongoId(scheduleId)) {
+      skipSave.current = false;
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await apiData(`/api/v1/schedules/${scheduleId}`);
+        if (cancelled) return;
+        setTitle(s.name || "Schedule");
+        setTimezone(s.timezone || "UTC");
+        setIsDefault(Boolean(s.isDefault));
+        const av = weeklyRulesToAvailability(s.weeklyRules);
+        setAvailability(av);
+        queueMicrotask(() => {
+          skipSave.current = false;
+        });
+      } catch {
+        skipSave.current = false;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [scheduleId]);
+
+  useEffect(() => {
+    if (scheduleId === "new" || !isMongoId(scheduleId)) return;
+    if (skipSave.current) return;
+    const t = setTimeout(() => {
+      const weeklyRules = availabilityToWeeklyRules(availability);
+      apiData(`/api/v1/schedules/${scheduleId}`, {
+        method: "PATCH",
+        json: {
+          name: title,
+          timezone,
+          isDefault,
+          weeklyRules,
+        },
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [title, timezone, isDefault, availability, scheduleId]);
+
   const toggleDay = (day) => {
-    setAvailability(prev => ({
+    setAvailability((prev) => ({
       ...prev,
-      [day]: prev[day] ? null : [{ from: "9:00am", to: "5:00pm" }]
+      [day]: prev[day] ? null : [{ from: "9:00am", to: "5:00pm" }],
     }));
+  };
+
+  const updateSlot = (day, field, value) => {
+    setAvailability((prev) => {
+      const slots = prev[day] ? [...prev[day]] : [{ from: "9:00am", to: "5:00pm" }];
+      const row = { ...(slots[0] || { from: "9:00am", to: "5:00pm" }), [field]: value };
+      slots[0] = row;
+      return { ...prev, [day]: slots };
+    });
+  };
+
+  const handleSaveClick = async () => {
+    if (scheduleId === "new") {
+      try {
+        const weeklyRules = availabilityToWeeklyRules(availability);
+        const created = await apiData("/api/v1/schedules", {
+          method: "POST",
+          json: {
+            name: title,
+            timezone,
+            isDefault,
+            weeklyRules,
+          },
+        });
+        onNavigate(`/availability/${created._id}`);
+      } catch {
+        /* keep UI */
+      }
+      return;
+    }
+    if (!isMongoId(scheduleId)) return;
+    try {
+      await apiData(`/api/v1/schedules/${scheduleId}`, {
+        method: "PATCH",
+        json: {
+          name: title,
+          timezone,
+          isDefault,
+          weeklyRules: availabilityToWeeklyRules(availability),
+        },
+      });
+    } catch {
+      /* noop */
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!isMongoId(scheduleId)) {
+      onNavigate("/availability");
+      return;
+    }
+    if (!window.confirm("Delete this schedule?")) return;
+    try {
+      await apiData(`/api/v1/schedules/${scheduleId}`, { method: "DELETE" });
+      onNavigate("/availability");
+    } catch {
+      /* noop */
+    }
   };
 
   return (
     <div className="flex flex-col h-full bg-default text-default animate-in fade-in duration-500">
-      {/* ── Top Header ──────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 sm:px-8 py-4 sm:py-6 sticky top-0 bg-default/80 backdrop-blur-md z-50 border-b border-subtle sm:border-none gap-4">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-3">
@@ -43,7 +174,7 @@ export function AvailabilityPage({ onNavigate }) {
                 <Icon name="edit-2" className="h-4 w-4 text-subtle opacity-0 group-hover:opacity-100 transition" />
              </div>
           </div>
-          <p className="text-xs sm:text-sm font-medium text-subtle ml-8">Mon - Fri, 9:00 AM - 5:00 PM</p>
+          <p className="text-xs sm:text-sm font-medium text-subtle ml-8">{subtitle}</p>
         </div>
 
         <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
@@ -52,11 +183,17 @@ export function AvailabilityPage({ onNavigate }) {
               <Switch checked={isDefault} onChange={setIsDefault} />
            </div>
            <div className="flex items-center gap-2">
-              <button className="p-2.5 bg-[#291415] border border-[#442222] rounded-lg text-[#f87171] hover:bg-[#3d1a1c] transition shadow-sm group">
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="p-2.5 bg-[#291415] border border-[#442222] rounded-lg text-[#f87171] hover:bg-[#3d1a1c] transition shadow-sm group"
+              >
                 <Icon name="trash" className="h-4 w-4" />
               </button>
               <div className="w-[1px] h-6 bg-subtle mx-1" />
-              <button 
+              <button
+                type="button"
+                onClick={handleSaveClick}
                 className="btn-primary min-h-[36px] px-5 py-2"
               >
                 Save
@@ -65,11 +202,9 @@ export function AvailabilityPage({ onNavigate }) {
         </div>
       </div>
 
-      {/* ── Main Content Grid ────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto px-4 sm:px-8 pb-12">
         <div className="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-12">
           
-          {/* ── Left Column: Weekly Grid & Overrides ────────────── */}
           <div className="space-y-10">
             <div className="bg-default border border-subtle rounded-xl p-4 shadow-sm" ref={parent}>
               {days.map(day => {
@@ -87,20 +222,30 @@ export function AvailabilityPage({ onNavigate }) {
                         <>
                           <div className="flex items-center gap-2">
                             <div className="flex items-center bg-muted/30 border border-subtle rounded-lg px-3 py-1.5 text-sm gap-2">
-                               <input type="text" className="w-16 bg-transparent outline-none font-medium text-emphasis" defaultValue="9:00am" />
+                               <input
+                                 type="text"
+                                 className="w-16 bg-transparent outline-none font-medium text-emphasis"
+                                 value={slots[0]?.from || "9:00am"}
+                                 onChange={(e) => updateSlot(day, "from", e.target.value)}
+                               />
                                <span className="text-subtle">–</span>
-                               <input type="text" className="w-16 bg-transparent outline-none font-medium text-emphasis" defaultValue="5:00pm" />
+                               <input
+                                 type="text"
+                                 className="w-16 bg-transparent outline-none font-medium text-emphasis"
+                                 value={slots[0]?.to || "5:00pm"}
+                                 onChange={(e) => updateSlot(day, "to", e.target.value)}
+                               />
                             </div>
-                            <button className="p-2 hover:bg-subtle rounded-md text-subtle transition">
+                            <button type="button" className="p-2 hover:bg-subtle rounded-md text-subtle transition">
                                <Icon name="plus" className="h-3.5 w-3.5" />
                             </button>
-                            <button className="p-2 hover:bg-subtle rounded-md text-subtle transition">
+                            <button type="button" className="p-2 hover:bg-subtle rounded-md text-subtle transition">
                                <Icon name="copy" className="h-3.5 w-3.5" />
                             </button>
                           </div>
                         </>
                       ) : (
-                        <div className="h-9" /> /* Spacer for alignment */
+                        <div className="h-9" />
                       )}
                     </div>
                   </div>
@@ -108,7 +253,6 @@ export function AvailabilityPage({ onNavigate }) {
               })}
             </div>
 
-            {/* Date Overrides Section */}
             <div className="bg-default border border-subtle rounded-xl p-8 space-y-4">
                <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-emphasis">Date overrides</h3>
@@ -117,25 +261,25 @@ export function AvailabilityPage({ onNavigate }) {
                <p className="text-sm text-subtle leading-relaxed">
                  Add dates when your availability changes from your daily hours.
                </p>
-               <button className="flex items-center gap-2 px-4 py-2 border border-subtle rounded-lg text-sm font-bold text-emphasis hover:bg-subtle transition">
+               <button type="button" className="flex items-center gap-2 px-4 py-2 border border-subtle rounded-lg text-sm font-bold text-emphasis hover:bg-subtle transition">
                   <Icon name="plus" className="h-4 w-4" />
                   Add an override
                </button>
             </div>
           </div>
 
-          {/* ── Right Column: Sidebar ──────────────────────────── */}
           <div className="space-y-10">
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-emphasis">Timezone</h3>
               <div className="relative group">
                 <select 
                   className="w-full appearance-none bg-default border border-subtle rounded-lg px-4 py-2.5 text-sm font-medium text-emphasis focus:ring-1 focus:ring-emphasis outline-none cursor-pointer transition"
-                  defaultValue="Europe/London"
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
                 >
-                  <option>Europe/London</option>
-                  <option>Asia/Kolkata</option>
-                  <option>America/New_York</option>
+                  <option value="Europe/London">Europe/London</option>
+                  <option value="Asia/Kolkata">Asia/Kolkata</option>
+                  <option value="America/New_York">America/New_York</option>
                 </select>
                 <Icon name="chevron-down" className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle pointer-events-none" />
               </div>
@@ -143,7 +287,7 @@ export function AvailabilityPage({ onNavigate }) {
 
             <div className="bg-default border border-subtle rounded-xl p-6 space-y-4">
                <h3 className="text-sm font-bold text-emphasis">Something doesn't look right?</h3>
-               <button className="w-full px-4 py-2 border border-subtle rounded-lg text-sm font-bold text-emphasis hover:bg-subtle transition">
+               <button type="button" className="w-full px-4 py-2 border border-subtle rounded-lg text-sm font-bold text-emphasis hover:bg-subtle transition">
                   Launch troubleshooter
                </button>
             </div>
@@ -152,9 +296,8 @@ export function AvailabilityPage({ onNavigate }) {
         </div>
       </main>
 
-      {/* Floating Chat Icon */}
       <div className="fixed bottom-6 right-6">
-         <button className="p-4 bg-emphasis text-default rounded-full shadow-2xl hover:scale-110 transition active:scale-95">
+         <button type="button" className="p-4 bg-emphasis text-default rounded-full shadow-2xl hover:scale-110 transition active:scale-95">
             <Icon name="message-square" className="h-6 w-6" />
          </button>
       </div>

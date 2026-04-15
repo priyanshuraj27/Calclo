@@ -11,17 +11,31 @@ const getBaseUrl = () =>
 export async function apiRequest(path, options = {}) {
   const { json, ...init } = options;
   const headers = { ...(init.headers || {}) };
+  const method = (init.method || "GET").toUpperCase();
+  const url = `${getBaseUrl()}${path}`;
   let body = init.body;
   if (json !== undefined) {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(json);
   }
-  const res = await fetch(`${getBaseUrl()}${path}`, {
-    ...init,
-    headers,
-    body,
-  });
-  const payload = await res.json().catch(() => ({}));
+  const requestPayload = json !== undefined ? json : body;
+
+  console.groupCollapsed(`[API] ${method} ${url}`);
+  console.log("Request payload:", requestPayload ?? null);
+
+  const res = await fetch(url, { ...init, headers, body });
+
+  let payload = {};
+  try {
+    payload = await res.json();
+  } catch {
+    payload = {};
+  }
+
+  console.log("Response status:", res.status);
+  console.log("Response payload:", payload);
+  console.groupEnd();
+
   if (!res.ok) {
     const msg =
       payload?.message || payload?.error || res.statusText || "Request failed";

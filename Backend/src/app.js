@@ -3,6 +3,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import { ApiError } from "./utils/ApiError.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
+import { requestLogger } from "./middlewares/requestLogger.middleware.js";
 
 import docsRouter from "./docs.routes.js";
 import userRouter from "./routes/user.routes.js";
@@ -24,6 +25,8 @@ app.use(express.json({ limit: "50mb" }));
 app.use(urlencoded({ extended: true, limit: "50mb" }));
 app.use(express.static("public"));
 app.use(cookieParser());
+
+app.use(requestLogger);
 
 app.use("/api/v1/docs", docsRouter);
 app.use("/api/v1/users", userRouter);

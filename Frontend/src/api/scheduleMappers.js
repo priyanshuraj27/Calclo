@@ -109,3 +109,12 @@ export function summarizeTime(weeklyRules) {
   }
   return "";
 }
+
+/** Build listing subtitle from UI availability map */
+export function summarizeAvailabilitySubtitle(availability) {
+  const wr = availabilityToWeeklyRules(availability);
+  const days = summarizeDays(wr);
+  const time = summarizeTime(wr);
+  if (time) return `${days}, ${time}`;
+  return days;
+}

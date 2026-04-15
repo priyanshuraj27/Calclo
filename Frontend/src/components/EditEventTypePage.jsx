@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Icon } from "./Icon";
 import { Switch } from "./Switch";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
+import { apiData } from "../api/client.js";
 
 // ─── Sub-Components ─────────────────────────────────────────────────────────
 
@@ -60,16 +61,272 @@ const SettingsToggle = ({ title, description, checked, onChange }) => (
   </div>
 );
 
+/** Location options (UI only — not persisted to the API). */
+const LOCATION_TYPES = [
+  { value: "cal-video", label: "Cal Video (Default)", icon: "video" },
+  { value: "google-meet", label: "Google Meet", icon: "video" },
+  { value: "zoom", label: "Zoom", icon: "video" },
+  { value: "phone", label: "Phone call", icon: "phone" },
+  { value: "in-person", label: "In-person meeting", icon: "users" },
+  { value: "custom-link", label: "Custom link", icon: "link" },
+];
+
+function locationTypeIcon(value) {
+  return LOCATION_TYPES.find((t) => t.value === value)?.icon || "video";
+}
+
+function newExtraLocation() {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    type: "google-meet",
+    phone: "",
+    address: "",
+    link: "",
+    notes: "",
+  };
+}
+
+/**
+ * Custom location picker — native <select> option menus ignore dark theme
+ * on many browsers; this uses theme tokens so light/dark both read well.
+ */
+function LocationTypeSelect({ value, onChange, instanceId, ariaLabel }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const listId = `${instanceId}-listbox`;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocMouseDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const selected =
+    LOCATION_TYPES.find((t) => t.value === value) || LOCATION_TYPES[0];
+
+  return (
+    <div className="relative min-w-0 flex-1" ref={wrapRef}>
+      <button
+        type="button"
+        aria-label={ariaLabel || "Location type"}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        className="flex w-full min-w-0 items-center justify-between gap-2 rounded-md px-1 py-0.5 text-left text-sm font-medium text-emphasis outline-none transition hover:bg-subtle/40 focus-visible:ring-2 focus-visible:ring-emphasis/50"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="truncate">{selected.label}</span>
+        <Icon
+          name="chevron-down"
+          className={`h-4 w-4 shrink-0 text-subtle transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open ? (
+        <ul
+          id={listId}
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-[60] mt-1 max-h-[min(280px,50vh)] overflow-y-auto rounded-lg border py-1 shadow-xl"
+          style={{
+            backgroundColor: "var(--cal-bg)",
+            borderColor: "var(--cal-border)",
+            color: "var(--cal-text-emphasis)",
+          }}
+        >
+          {LOCATION_TYPES.map((opt) => {
+            const isActive = opt.value === value;
+            return (
+              <li key={opt.value} role="none">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={isActive}
+                  className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors ${
+                    isActive
+                      ? "bg-[var(--cal-bg-subtle)] font-semibold text-[var(--cal-text-emphasis)]"
+                      : "text-[var(--cal-text)] hover:bg-[var(--cal-bg-muted)]"
+                  }`}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                >
+                  <Icon
+                    name={opt.icon}
+                    className="h-4 w-4 shrink-0 text-[var(--cal-text-subtle)]"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{opt.label}</span>
+                  {isActive ? (
+                    <Icon name="check" className="h-4 w-4 shrink-0 text-emphasis" />
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export function EditEventTypePage({ onNavigate, title: initialTitle }) {
+const isMongoId = (id) => /^[a-f\d]{24}$/i.test(id || "");
+
+export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId }) {
   const [title, setTitle] = useState(initialTitle || "15 Min Meeting");
   const [slug, setSlug] = useState(title.toLowerCase().replace(/ /g, "-"));
   const [duration, setDuration] = useState(15);
+  const [description, setDescription] = useState("");
   const [activeTab, setActiveTab] = useState("basics");
   const [enabled, setEnabled] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hostSlug, setHostSlug] = useState(
+    import.meta.env.VITE_DEFAULT_HOST_USERNAME || "priyanshu"
+  );
+  const skipPersist = useRef(true);
+
+  const [locationType, setLocationType] = useState("cal-video");
+  const [locationPhone, setLocationPhone] = useState("");
+  const [locationAddress, setLocationAddress] = useState("");
+  const [locationLink, setLocationLink] = useState("");
+  const [locationNotes, setLocationNotes] = useState("");
+  const [locationPasscode, setLocationPasscode] = useState("");
+  const [locationAdvancedOpen, setLocationAdvancedOpen] = useState(false);
+  const [extraLocations, setExtraLocations] = useState([]);
   
   const [parent] = useAutoAnimate();
+
+  const resetPrimaryLocation = () => {
+    setLocationType("cal-video");
+    setLocationPhone("");
+    setLocationAddress("");
+    setLocationLink("");
+    setLocationNotes("");
+    setLocationPasscode("");
+  };
+
+  useEffect(() => {
+    apiData("/api/v1/users/current-user")
+      .then((u) => setHostSlug(u.username))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!isMongoId(eventTypeId)) {
+      skipPersist.current = false;
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const doc = await apiData(`/api/v1/event-types/${eventTypeId}`);
+        if (cancelled) return;
+        setTitle(doc.title || "");
+        setSlug(doc.slug || "");
+        setDuration(Number(doc.durationMinutes) || 15);
+        setDescription(doc.description || "");
+        setEnabled(!doc.hidden);
+        queueMicrotask(() => {
+          skipPersist.current = false;
+        });
+      } catch {
+        skipPersist.current = false;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [eventTypeId]);
+
+  useEffect(() => {
+    if (!isMongoId(eventTypeId)) return;
+    if (skipPersist.current) return;
+    const t = setTimeout(() => {
+      apiData(`/api/v1/event-types/${eventTypeId}`, {
+        method: "PATCH",
+        json: {
+          title,
+          slug,
+          durationMinutes: Number(duration) || 15,
+          description,
+          hidden: !enabled,
+        },
+      }).catch(() => {});
+    }, 700);
+    return () => clearTimeout(t);
+  }, [title, slug, duration, description, enabled, eventTypeId]);
+
+  const persistEventType = async () => {
+    const payload = {
+      title: (title || "").trim(),
+      slug: (slug || "").trim(),
+      durationMinutes: Number(duration) || 15,
+      description,
+      hidden: !enabled,
+    };
+
+    if (!payload.title || !payload.slug) {
+      throw new Error("Title and slug are required");
+    }
+
+    if (isMongoId(eventTypeId)) {
+      await apiData(`/api/v1/event-types/${eventTypeId}`, {
+        method: "PATCH",
+        json: payload,
+      });
+      return { id: eventTypeId, created: false };
+    }
+
+    const created = await apiData("/api/v1/event-types", {
+      method: "POST",
+      json: {
+        ...payload,
+        active: true,
+      },
+    });
+    return { id: created?._id, created: true };
+  };
+
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      await persistEventType();
+      onNavigate("/event-types");
+    } catch (error) {
+      console.error("[EditEventTypePage] Save failed:", error);
+      window.alert(error?.message || "Failed to save event type");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!isMongoId(eventTypeId)) {
+      onNavigate("/event-types");
+      return;
+    }
+    if (!window.confirm("Delete this event type?")) return;
+    try {
+      await apiData(`/api/v1/event-types/${eventTypeId}`, { method: "DELETE" });
+      onNavigate("/event-types");
+    } catch (error) {
+      console.error("[EditEventTypePage] Delete failed:", error);
+      window.alert(error?.message || "Failed to delete event type");
+    }
+  };
 
   const sidebarItems = [
     { id: "basics", label: "Basics", sublabel: `${duration} mins`, icon: "link" },
@@ -104,7 +361,7 @@ export function EditEventTypePage({ onNavigate, title: initialTitle }) {
           </button>
           <div className="min-w-0">
             <h1 className="text-sm sm:text-lg font-bold text-emphasis truncate">{title}</h1>
-            <p className="text-[10px] sm:text-xs text-subtle font-medium truncate">cal.com/priyanshu/{slug}</p>
+            <p className="text-[10px] sm:text-xs text-subtle font-medium truncate">cal.com/{hostSlug}/{slug}</p>
           </div>
         </div>
 
@@ -113,18 +370,40 @@ export function EditEventTypePage({ onNavigate, title: initialTitle }) {
              <div className="hidden xs:flex items-center border-r border-subtle pr-2 sm:pr-4 mr-1 sm:mr-2">
                 <Switch checked={enabled} onChange={setEnabled} />
              </div>
-             <button className="p-2 hover:bg-subtle rounded-md text-subtle hover:text-emphasis transition group" title="Preview">
+             <button
+               type="button"
+               onClick={() => onNavigate(`/book/${hostSlug}/${encodeURIComponent(slug)}`)}
+               className="p-2 hover:bg-subtle rounded-md text-subtle hover:text-emphasis transition group"
+               title="Preview"
+             >
                <Icon name="external-link" className="h-[18px] w-[18px]" />
              </button>
-             <button className="hidden sm:block p-2 hover:bg-subtle rounded-md text-subtle hover:text-emphasis transition" title="Copy link">
+             <button
+               type="button"
+               onClick={() => {
+                 const url = `${window.location.origin}/book/${hostSlug}/${encodeURIComponent(slug)}`;
+                 navigator.clipboard?.writeText(url);
+               }}
+               className="hidden sm:block p-2 hover:bg-subtle rounded-md text-subtle hover:text-emphasis transition"
+               title="Copy link"
+             >
                <Icon name="link" className="h-[18px] w-[18px]" />
              </button>
-             <button className="p-2 hover:bg-subtle rounded-md text-subtle hover:text-red-500 transition" title="Delete">
+             <button
+               type="button"
+               onClick={handleDelete}
+               className="p-2 hover:bg-subtle rounded-md text-subtle hover:text-red-500 transition"
+               title="Delete"
+             >
                <Icon name="trash" className="h-[18px] w-[18px]" />
              </button>
           </div>
-          <button className="btn-primary px-4 py-1.5 h-9 opacity-50 cursor-not-allowed">
-            Save
+          <button
+            type="button"
+            onClick={handleSave}
+            className={`btn-primary px-4 py-1.5 h-9 ${isSaving ? "opacity-70" : ""}`}
+          >
+            {isSaving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
@@ -195,8 +474,8 @@ export function EditEventTypePage({ onNavigate, title: initialTitle }) {
                       </div>
                       <textarea 
                         className="w-full bg-transparent p-4 min-h-[120px] text-sm outline-none resize-none"
-                        value={title}
-                        readOnly
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
                       />
                    </div>
                 </div>
@@ -205,7 +484,7 @@ export function EditEventTypePage({ onNavigate, title: initialTitle }) {
                    <label className="text-sm font-semibold text-emphasis block">URL</label>
                    <div className="flex rounded-lg border border-subtle bg-subtle overflow-hidden focus-within:ring-1 focus-within:ring-emphasis group transition-all shadow-sm">
                       <span className="px-4 py-2.5 text-sm text-subtle bg-muted/20 border-r border-subtle whitespace-nowrap">
-                        cal.com/genius-loq-3uk8nj/
+                        cal.com/{hostSlug}/
                       </span>
                       <input 
                         type="text" 
@@ -217,7 +496,12 @@ export function EditEventTypePage({ onNavigate, title: initialTitle }) {
                 </div>
 
                 <div className="pt-6 border-t border-subtle space-y-6">
-                  <InputField label="Duration" value={duration} onChange={setDuration} suffix="Minutes" />
+                  <InputField
+                    label="Duration"
+                    value={String(duration)}
+                    onChange={(v) => setDuration(Number(v) || 0)}
+                    suffix="Minutes"
+                  />
                   <SettingsToggle 
                     title="Allow multiple durations" 
                     description="Allow bookers to choose between multiple durations for this event type."
@@ -228,25 +512,207 @@ export function EditEventTypePage({ onNavigate, title: initialTitle }) {
 
                 <div className="pt-6 border-t border-subtle space-y-6">
                    <SectionHeader title="Location" />
-                   <div className="relative group cursor-pointer flex items-center justify-between p-3 bg-default border border-subtle rounded-lg hover:border-emphasis transition shadow-sm">
-                      <div className="flex items-center gap-3">
-                         <div className="p-1.5 bg-subtle rounded border border-subtle">
-                            <Icon name="video" className="h-4 w-4" />
-                         </div>
-                         <span className="text-sm font-medium">Cal Video (Default)</span>
+                   <p className="text-xs text-subtle -mt-2">
+                     Where this event takes place. (Shown in the editor only — not saved to the server yet.)
+                   </p>
+
+                   <div className="flex items-center gap-3 p-3 bg-default border border-subtle rounded-lg focus-within:border-emphasis transition shadow-sm">
+                      <div className="p-1.5 bg-subtle rounded border border-subtle shrink-0">
+                         <Icon name={locationTypeIcon(locationType)} className="h-4 w-4 text-subtle" />
                       </div>
-                      <div className="flex items-center gap-2">
-                         <Icon name="chevron-down" className="h-4 w-4 text-subtle" />
-                         <Icon name="x" className="h-4 w-4 text-subtle hover:text-red-500 transition-colors" />
-                      </div>
-                   </div>
-                   
-                   <div className="flex items-center justify-between group cursor-pointer py-1">
-                      <span className="text-sm font-medium text-emphasis">Show advanced settings</span>
-                      <Icon name="chevron-down" className="h-4 w-4 text-subtle group-hover:text-emphasis transition" />
+                      <LocationTypeSelect
+                        instanceId="location-primary"
+                        ariaLabel="Primary meeting location"
+                        value={locationType}
+                        onChange={setLocationType}
+                      />
+                      <button
+                        type="button"
+                        title="Reset primary location"
+                        className="p-1.5 rounded-md text-subtle hover:text-red-500 hover:bg-subtle/50 transition shrink-0"
+                        onClick={resetPrimaryLocation}
+                      >
+                         <Icon name="trash" className="h-4 w-4" />
+                      </button>
                    </div>
 
-                   <button className="flex items-center gap-2 text-sm font-bold text-emphasis py-1 hover:underline group">
+                   <div className="space-y-3">
+                      {locationType === "phone" && (
+                        <InputField
+                          label="Phone number"
+                          value={locationPhone}
+                          onChange={setLocationPhone}
+                          placeholder="e.g. +1 555 0100"
+                        />
+                      )}
+                      {locationType === "in-person" && (
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold text-emphasis block">
+                            Address or venue
+                          </label>
+                          <textarea
+                            className="w-full bg-transparent border border-subtle rounded-lg px-4 py-2 text-sm min-h-[88px] outline-none focus:ring-1 focus:ring-emphasis resize-none placeholder:text-muted"
+                            value={locationAddress}
+                            onChange={(e) => setLocationAddress(e.target.value)}
+                            placeholder="Building name, room, floor, city…"
+                          />
+                        </div>
+                      )}
+                      {locationType === "custom-link" && (
+                        <InputField
+                          label="Meeting link"
+                          value={locationLink}
+                          onChange={setLocationLink}
+                          placeholder="https://…"
+                        />
+                      )}
+                      {(locationType === "cal-video" ||
+                        locationType === "google-meet" ||
+                        locationType === "zoom") && (
+                        <p className="text-xs text-subtle leading-relaxed">
+                          {locationType === "google-meet" &&
+                            "Guests typically get a Google Meet link on the calendar invite once scheduling apps are connected."}
+                          {locationType === "zoom" &&
+                            "Use Zoom for this event; meeting URLs can be created automatically when Zoom is installed."}
+                          {locationType === "cal-video" &&
+                            "Built-in Cal Video for this event type."}
+                        </p>
+                      )}
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold text-emphasis block">
+                          Instructions for guests (optional)
+                        </label>
+                        <textarea
+                          className="w-full bg-transparent border border-subtle rounded-lg px-4 py-2 text-sm min-h-[72px] outline-none focus:ring-1 focus:ring-emphasis resize-none placeholder:text-muted"
+                          value={locationNotes}
+                          onChange={(e) => setLocationNotes(e.target.value)}
+                          placeholder="Dial-in, parking, what to bring…"
+                        />
+                      </div>
+                   </div>
+
+                   <button
+                      type="button"
+                      className={`flex items-center justify-between w-full text-left py-2 rounded-lg px-1 -mx-1 hover:bg-subtle/20 transition ${locationAdvancedOpen ? "text-emphasis" : ""}`}
+                      onClick={() => setLocationAdvancedOpen((o) => !o)}
+                   >
+                      <span className="text-sm font-medium text-emphasis">Show advanced settings</span>
+                      <Icon
+                        name={locationAdvancedOpen ? "chevron-up" : "chevron-down"}
+                        className="h-4 w-4 text-subtle shrink-0"
+                      />
+                   </button>
+                   {locationAdvancedOpen && (
+                      <div className="space-y-2 pl-0.5 animate-in fade-in duration-150">
+                        <InputField
+                          label="Meeting ID / passcode (optional)"
+                          value={locationPasscode}
+                          onChange={setLocationPasscode}
+                          placeholder="Shown to guests in the booking details"
+                        />
+                      </div>
+                   )}
+
+                   {extraLocations.map((loc) => (
+                      <div
+                        key={loc.id}
+                        className="rounded-xl border border-subtle bg-muted/5 p-4 space-y-3 shadow-sm"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 bg-subtle rounded border border-subtle shrink-0">
+                            <Icon name={locationTypeIcon(loc.type)} className="h-4 w-4 text-subtle" />
+                          </div>
+                          <LocationTypeSelect
+                            instanceId={`location-extra-${loc.id}`}
+                            ariaLabel="Additional meeting location"
+                            value={loc.type}
+                            onChange={(next) =>
+                              setExtraLocations((prev) =>
+                                prev.map((x) =>
+                                  x.id === loc.id ? { ...x, type: next } : x
+                                )
+                              )
+                            }
+                          />
+                          <button
+                            type="button"
+                            title="Remove this location"
+                            className="p-1.5 rounded-md text-subtle hover:text-red-500 hover:bg-subtle/50 transition shrink-0"
+                            onClick={() =>
+                              setExtraLocations((prev) => prev.filter((x) => x.id !== loc.id))
+                            }
+                          >
+                            <Icon name="trash" className="h-4 w-4" />
+                          </button>
+                        </div>
+                        {loc.type === "phone" && (
+                          <InputField
+                            label="Phone number"
+                            value={loc.phone}
+                            onChange={(v) =>
+                              setExtraLocations((prev) =>
+                                prev.map((x) => (x.id === loc.id ? { ...x, phone: v } : x))
+                              )
+                            }
+                            placeholder="e.g. +1 555 0100"
+                          />
+                        )}
+                        {loc.type === "in-person" && (
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold text-emphasis block">
+                              Address or venue
+                            </label>
+                            <textarea
+                              className="w-full bg-transparent border border-subtle rounded-lg px-4 py-2 text-sm min-h-[72px] outline-none resize-none"
+                              value={loc.address}
+                              onChange={(e) =>
+                                setExtraLocations((prev) =>
+                                  prev.map((x) =>
+                                    x.id === loc.id ? { ...x, address: e.target.value } : x
+                                  )
+                                )
+                              }
+                              placeholder="Building, room, city…"
+                            />
+                          </div>
+                        )}
+                        {loc.type === "custom-link" && (
+                          <InputField
+                            label="Meeting link"
+                            value={loc.link}
+                            onChange={(v) =>
+                              setExtraLocations((prev) =>
+                                prev.map((x) => (x.id === loc.id ? { ...x, link: v } : x))
+                              )
+                            }
+                            placeholder="https://…"
+                          />
+                        )}
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold text-emphasis block">
+                            Notes (optional)
+                          </label>
+                          <textarea
+                            className="w-full bg-transparent border border-subtle rounded-lg px-4 py-2 text-sm min-h-[56px] outline-none resize-none"
+                            value={loc.notes}
+                            onChange={(e) =>
+                              setExtraLocations((prev) =>
+                                prev.map((x) =>
+                                  x.id === loc.id ? { ...x, notes: e.target.value } : x
+                                )
+                              )
+                            }
+                            placeholder="Extra details for this option…"
+                          />
+                        </div>
+                      </div>
+                   ))}
+
+                   <button
+                      type="button"
+                      className="flex items-center gap-2 text-sm font-bold text-emphasis py-1 hover:underline group"
+                      onClick={() => setExtraLocations((prev) => [...prev, newExtraLocation()])}
+                   >
                       <div className="p-1 bg-subtle border border-subtle rounded group-hover:border-emphasis transition">
                         <Icon name="plus" className="h-3 w-3" />
                       </div>
@@ -254,7 +720,11 @@ export function EditEventTypePage({ onNavigate, title: initialTitle }) {
                    </button>
 
                    <div className="text-xs text-subtle pt-2 border-t border-subtle/50">
-                      Can't find the right conferencing app? Visit our <span className="text-emphasis font-semibold hover:underline cursor-pointer">App Store</span>.
+                      Can&apos;t find the right conferencing app? Visit our{" "}
+                      <span className="text-emphasis font-semibold hover:underline cursor-pointer">
+                        App Store
+                      </span>
+                      .
                    </div>
                 </div>
               </div>

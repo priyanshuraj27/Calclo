@@ -146,10 +146,9 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
     session.endSession();
   }
 
-  const populated = await Booking.findById(created._id).populate(
-    "eventTypeId",
-    "title slug durationMinutes description"
-  );
+  const populated = await Booking.findById(created._id)
+    .populate("eventTypeId", "title slug durationMinutes description")
+    .populate("hostUserId", "username fullName email avatar");
 
   return res.status(201).json(
     new ApiResponse(201, "Booking created", {
@@ -164,6 +163,10 @@ export const getBookingConfirmation = asyncHandler(async (req, res) => {
   const { token } = req.query;
   if (!token) throw new ApiError(400, "token query is required");
 
+  if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+    throw new ApiError(400, "Invalid booking id");
+  }
+
   const tokenDoc = await BookingToken.findOne({
     bookingId,
     tokenHash: hashToken(token),
@@ -173,8 +176,174 @@ export const getBookingConfirmation = asyncHandler(async (req, res) => {
   if (!tokenDoc) throw new ApiError(401, "Invalid or expired token");
 
   const booking = await Booking.findById(bookingId)
-    .populate("eventTypeId")
-    .populate("hostUserId", "username fullName avatar");
+    .populate("eventTypeId", "title slug durationMinutes description")
+    .populate("hostUserId", "username fullName avatar email");
 
   return res.status(200).json(new ApiResponse(200, "OK", { booking }));
+});
+
+export const cancelPublicBooking = asyncHandler(async (req, res) => {
+  const { bookingId } = req.params;
+  const { token, cancellationReason } = req.body;
+  if (!token) throw new ApiError(400, "token is required");
+  if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+    throw new ApiError(400, "Invalid booking id");
+  }
+
+  const tokenDoc = await BookingToken.findOne({
+    bookingId,
+    tokenHash: hashToken(token),
+    purpose: BOOKING_TOKEN_PURPOSE.CONFIRMATION,
+    expiresAt: { $gt: new Date() },
+  });
+  if (!tokenDoc) throw new ApiError(401, "Invalid or expired token");
+
+  const booking = await Booking.findById(bookingId);
+  if (!booking) throw new ApiError(404, "Booking not found");
+  if (booking.status === BOOKING_STATUS.CANCELLED) {
+    return res
+      .status(200)
+      .json(new ApiResponse(200, "Already cancelled", { booking }));
+  }
+  if (booking.status === BOOKING_STATUS.RESCHEDULED) {
+    throw new ApiError(400, "This booking was already rescheduled");
+  }
+
+  booking.status = BOOKING_STATUS.CANCELLED;
+  booking.cancellationReason = cancellationReason ?? "";
+  await booking.save();
+  await BookingToken.deleteMany({ bookingId: booking._id });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Booking cancelled", { booking }));
+});
+
+export const reschedulePublicBooking = asyncHandler(async (req, res) => {
+  const { bookingId } = req.params;
+  const { token, newStartAt } = req.body;
+  if (!token || !newStartAt) {
+    throw new ApiError(400, "token and newStartAt are required");
+  }
+  if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+    throw new ApiError(400, "Invalid booking id");
+  }
+
+  const tokenDoc = await BookingToken.findOne({
+    bookingId,
+    tokenHash: hashToken(token),
+    purpose: BOOKING_TOKEN_PURPOSE.CONFIRMATION,
+    expiresAt: { $gt: new Date() },
+  });
+  if (!tokenDoc) throw new ApiError(401, "Invalid or expired token");
+
+  const booking = await Booking.findById(bookingId).populate("eventTypeId");
+  if (!booking) throw new ApiError(404, "Booking not found");
+  if (booking.status === BOOKING_STATUS.CANCELLED) {
+    throw new ApiError(400, "Cannot reschedule a cancelled booking");
+  }
+  if (booking.status === BOOKING_STATUS.RESCHEDULED) {
+    throw new ApiError(400, "This booking was already rescheduled");
+  }
+
+  const eventType = booking.eventTypeId;
+  if (!eventType) throw new ApiError(404, "Event type missing");
+
+  const start = new Date(newStartAt);
+  const end = new Date(
+    start.getTime() + eventType.durationMinutes * 60 * 1000
+  );
+  const blockedStart = new Date(
+    start.getTime() - eventType.bufferBeforeMinutes * 60 * 1000
+  );
+  const blockedEnd = new Date(
+    end.getTime() + eventType.bufferAfterMinutes * 60 * 1000
+  );
+
+  const activeStatuses = [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE];
+
+  const session = await mongoose.startSession();
+  let created;
+  let rawToken;
+  try {
+    await session.withTransaction(async () => {
+      const others = await Booking.find({
+        hostUserId: booking.hostUserId,
+        _id: { $ne: booking._id },
+        status: { $in: activeStatuses },
+        blockedStartAt: { $lt: blockedEnd },
+        blockedEndAt: { $gt: blockedStart },
+      })
+        .session(session)
+        .lean();
+
+      if (hasOverlap(blockedStart, blockedEnd, others)) {
+        throw new ApiError(409, "That time slot is no longer available");
+      }
+
+      booking.status = BOOKING_STATUS.RESCHEDULED;
+      await booking.save({ session });
+
+      const status = eventType.requiresConfirmation
+        ? BOOKING_STATUS.TENTATIVE
+        : BOOKING_STATUS.CONFIRMED;
+
+      const etId = eventType._id ?? booking.eventTypeId;
+
+      const createdArr = await Booking.create(
+        [
+          {
+            hostUserId: booking.hostUserId,
+            eventTypeId: etId,
+            status,
+            startAt: start,
+            endAt: end,
+            blockedStartAt: blockedStart,
+            blockedEndAt: blockedEnd,
+            bookerName: booking.bookerName,
+            bookerEmail: booking.bookerEmail,
+            answers: booking.answers ?? [],
+            notes: booking.notes ?? "",
+            rescheduledFromBookingId: booking._id,
+          },
+        ],
+        { session }
+      );
+      created = createdArr[0];
+
+      await BookingToken.deleteMany({ bookingId: booking._id }, { session });
+
+      rawToken = crypto.randomBytes(32).toString("hex");
+      await BookingToken.create(
+        [
+          {
+            bookingId: created._id,
+            tokenHash: hashToken(rawToken),
+            purpose: BOOKING_TOKEN_PURPOSE.CONFIRMATION,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        ],
+        { session }
+      );
+    });
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    if (e.code === 11000) {
+      throw new ApiError(409, "That time slot is no longer available");
+    }
+    throw e;
+  } finally {
+    session.endSession();
+  }
+
+  const populated = await Booking.findById(created._id)
+    .populate("eventTypeId", "title slug durationMinutes description")
+    .populate("hostUserId", "username fullName email avatar");
+
+  return res.status(200).json(
+    new ApiResponse(200, "Booking rescheduled", {
+      booking: populated,
+      confirmationToken: rawToken,
+    })
+  );
 });

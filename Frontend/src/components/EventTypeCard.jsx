@@ -26,11 +26,15 @@ export function EventTypeCard({ type, profile, onAction }) {
     <li className={`group hover:bg-subtle/20 transition-colors ${isDropdownOpen ? 'relative z-40' : ''}`}>
       <div className="flex items-center px-4 py-4 sm:px-6">
         
-        {/* Content */}
-        <div className="flex-1 min-w-0">
+        {/* Content — row click opens edit (same as Cal.com) */}
+        <button
+          type="button"
+          className="flex-1 min-w-0 text-left rounded-lg -my-1 py-1 pr-2 -ml-1 pl-1 hover:bg-subtle/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-emphasis/40"
+          onClick={() => onAction("edit")}
+        >
           <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
-             <span className="text-sm font-semibold text-emphasis truncate leading-tight">{type.title}</span>
-             <span className="text-xs text-subtle truncate">/{profile?.slug || "host"}/{type.slug}</span>
+            <span className="text-sm font-semibold text-emphasis truncate leading-tight">{type.title}</span>
+            <span className="text-xs text-subtle truncate">/{profile?.slug || "host"}/{type.slug}</span>
           </div>
           <div className="flex items-center gap-2 mt-2">
              <div className="flex items-center gap-1.5 bg-subtle px-1.5 py-0.5 rounded-md">
@@ -46,7 +50,7 @@ export function EventTypeCard({ type, profile, onAction }) {
                 </div>
              )}
           </div>
-        </div>
+        </button>
 
         {/* Actions Container */}
         <div className="flex items-center gap-6">

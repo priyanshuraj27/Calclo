@@ -327,6 +327,34 @@
             "header": [],
             "url": "{{baseUrl}}/api/v1/public/bookings/{{bookingId}}/confirmation?token={{confirmationToken}}"
           }
+        },
+        {
+          "name": "Cancel booking (public token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{confirmationToken}}\",\n  \"cancellationReason\": \"Guest requested cancel\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/public/bookings/{{bookingId}}/cancel"
+          }
+        },
+        {
+          "name": "Reschedule booking (public token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{confirmationToken}}\",\n  \"newStartAt\": \"2026-04-22T04:00:00.000Z\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/public/bookings/{{bookingId}}/reschedule"
+          }
         }
       ]
     }

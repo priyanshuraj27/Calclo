@@ -22,6 +22,9 @@ function App() {
   const [currentPath, setCurrentPath] = useState(
     window.location.pathname === "/" ? "/event-types" : window.location.pathname
   );
+  const [navSearch, setNavSearch] = useState(
+    () => (typeof window !== "undefined" ? window.location.search || "" : "")
+  );
 
   // Synchronize path state with browser URL
   useEffect(() => {
@@ -32,6 +35,7 @@ function App() {
 
     const handlePopState = () => {
       setCurrentPath(window.location.pathname);
+      setNavSearch(window.location.search || "");
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -39,7 +43,12 @@ function App() {
 
   const navigate = (path) => {
     window.history.pushState({}, "", path);
-    setCurrentPath(path);
+    // Keep pathname state without query so dynamic segments (e.g. event type id)
+    // are not polluted by `?title=...` when splitting on "/".
+    const pathname = path.split("?")[0] || path;
+    const search = path.includes("?") ? path.slice(path.indexOf("?")) : "";
+    setCurrentPath(pathname);
+    setNavSearch(search);
   };
 
   const renderContent = () => {
@@ -63,21 +72,6 @@ function App() {
       const scheduleId = parts[1] || "new";
       return (
         <AvailabilityPage onNavigate={navigate} scheduleId={scheduleId} />
-      );
-    }
-
-    if (currentPath.startsWith("/book")) {
-      const parts = currentPath.split("/").filter(Boolean);
-      const defaultHost =
-        import.meta.env.VITE_DEFAULT_HOST_USERNAME || "priyanshu";
-      const hostUsername = parts[1] || defaultHost;
-      const eventSlug = parts[2] || "15min";
-      return (
-        <BookerPage
-          onNavigate={navigate}
-          hostUsername={hostUsername}
-          eventSlug={eventSlug}
-        />
       );
     }
 
@@ -118,6 +112,25 @@ function App() {
         );
     }
   };
+
+  if (currentPath.startsWith("/book")) {
+    const parts = currentPath.split("/").filter(Boolean);
+    const defaultHost =
+      import.meta.env.VITE_DEFAULT_HOST_USERNAME || "priyanshu";
+    const hostUsername = parts[1] || defaultHost;
+    const eventSlug = parts[2] || "15min";
+    return (
+      <div className="h-dvh min-h-0 w-full overflow-y-auto overflow-x-hidden bg-[#0a0a0a] font-sans">
+        <IconSprites />
+        <BookerPage
+          onNavigate={navigate}
+          hostUsername={hostUsername}
+          eventSlug={eventSlug}
+          navSearch={navSearch}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-full bg-default text-default font-sans overflow-hidden flex-col md:flex-row">
