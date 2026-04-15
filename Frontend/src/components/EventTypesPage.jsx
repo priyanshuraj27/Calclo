@@ -87,7 +87,7 @@ export function EventTypesPage() {
                 />
               </div>
               {/* + New button */}
-              <button className="whitespace-nowrap inline-flex items-center text-sm font-medium relative rounded-md transition cursor-pointer gap-1 bg-emphasis text-inverted border border-emphasis px-3 py-2 hover:opacity-90">
+              <button className="whitespace-nowrap inline-flex items-center text-sm font-medium relative rounded-md transition cursor-pointer gap-1 px-3 py-2 hover:opacity-90 btn-primary">
                 <Icon name="plus" className="h-4 w-4 shrink-0 stroke-[1.5px]" />
                 <span>New</span>
               </button>

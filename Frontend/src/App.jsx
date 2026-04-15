@@ -15,10 +15,17 @@ import { ReferPage } from "./components/ReferPage";
 
 function App() {
   // Simple routing simulation
-  const [currentPath, setCurrentPath] = useState(window.location.pathname || "/event-types");
+  const [currentPath, setCurrentPath] = useState(
+    window.location.pathname === "/" ? "/event-types" : window.location.pathname
+  );
 
   // Synchronize path state with browser URL
   useEffect(() => {
+    // Redirect / to /event-types
+    if (window.location.pathname === "/") {
+      window.history.replaceState({}, "", "/event-types");
+    }
+
     const handlePopState = () => {
       setCurrentPath(window.location.pathname);
     };

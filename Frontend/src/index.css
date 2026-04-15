@@ -172,3 +172,15 @@ body {
   background-color: var(--cal-bg-emphasis);
   border-radius: 0.375rem;
 }
+
+.btn-primary {
+  background-color: var(--cal-bg-emphasis);
+  color: var(--cal-text-inverted);
+  border: 1px solid var(--cal-border-emphasis);
+}
+
+.dark .btn-primary {
+  background-color: white;
+  color: black;
+  border-color: white;
+}
