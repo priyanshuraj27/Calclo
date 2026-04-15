@@ -315,7 +315,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"startAt\": \"2026-04-21T03:30:00.000Z\",\n  \"bookerName\": \"Test Booker\",\n  \"bookerEmail\": \"booker@example.com\",\n  \"answers\": [{ \"key\": \"topic\", \"value\": \"Product demo\" }],\n  \"notes\": \"Looking forward to it.\"\n}"
+              "raw": "{\n  \"startAt\": \"2026-04-21T03:30:00.000Z\",\n  \"bookerName\": \"Test Booker\",\n  \"bookerEmail\": \"booker@example.com\",\n  \"answers\": [{ \"key\": \"topic\", \"value\": \"Product demo\" }],\n  \"notes\": \"Looking forward to it.\",\n  \"meetingWhereType\": \"cal-video\",\n  \"meetingWhereDetail\": \"\"\n}"
             },
             "url": "{{baseUrl}}/api/v1/public/hosts/{{hostUsername}}/events/{{eventSlug}}/bookings"
           }
@@ -351,7 +351,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"token\": \"{{confirmationToken}}\",\n  \"newStartAt\": \"2026-04-22T04:00:00.000Z\"\n}"
+              "raw": "{\n  \"token\": \"{{confirmationToken}}\",\n  \"newStartAt\": \"2026-04-22T04:00:00.000Z\",\n  \"meetingWhereType\": \"cal-video\",\n  \"meetingWhereDetail\": \"\"\n}"
             },
             "url": "{{baseUrl}}/api/v1/public/bookings/{{bookingId}}/reschedule"
           }

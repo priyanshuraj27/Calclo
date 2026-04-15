@@ -1,5 +1,8 @@
 import mongoose, { Schema } from "mongoose";
-import { BOOKING_STATUS } from "../constants/scheduling.constants.js";
+import {
+  BOOKING_STATUS,
+  MEETING_WHERE_TYPES,
+} from "../constants/scheduling.constants.js";
 
 const answerSchema = new Schema(
   {
@@ -37,6 +40,12 @@ const bookingSchema = new Schema(
     bookerEmail: { type: String, required: true, trim: true, lowercase: true },
     answers: { type: [answerSchema], default: [] },
     notes: { type: String, default: "", trim: true },
+    meetingWhereType: {
+      type: String,
+      enum: MEETING_WHERE_TYPES,
+      default: "cal-video",
+    },
+    meetingWhereDetail: { type: String, default: "", trim: true },
     cancellationReason: { type: String, default: "", trim: true },
     rescheduledFromBookingId: {
       type: Schema.Types.ObjectId,

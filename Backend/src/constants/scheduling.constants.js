@@ -16,6 +16,16 @@ export const BOOKING_TOKEN_PURPOSE = {
   RESCHEDULE: "RESCHEDULE",
 };
 
+/** Where the meeting happens (booker picks at booking time). */
+export const MEETING_WHERE_TYPES = [
+  "cal-video",
+  "google-meet",
+  "zoom",
+  "phone",
+  "in-person",
+  "custom-link",
+];
+
 export const WEEKDAY_KEYS = [
   "sunday",
   "monday",

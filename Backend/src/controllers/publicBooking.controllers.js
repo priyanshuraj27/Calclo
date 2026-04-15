@@ -12,9 +12,21 @@ import {
   loadPublicEventContext,
   hasOverlap,
 } from "../services/slotGeneration.service.js";
+import {
+  sendBookingConfirmationEmail,
+  sendBookingCancelledEmail,
+  sendBookingRescheduledEmail,
+} from "../services/email.service.js";
+import { normalizeMeetingWhere } from "../utils/meetingWhere.util.js";
 
 const hashToken = (raw) =>
   crypto.createHash("sha256").update(raw, "utf8").digest("hex");
+
+function queueEmail(fn) {
+  void Promise.resolve()
+    .then(fn)
+    .catch((err) => console.error("[email]", err?.message || err));
+}
 
 export const getPublicEvent = asyncHandler(async (req, res) => {
   const { hostUsername, eventSlug } = req.params;
@@ -62,6 +74,12 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
   if (!startAt || !bookerName || !bookerEmail) {
     throw new ApiError(400, "startAt, bookerName, and bookerEmail are required");
   }
+
+  const { type: meetingWhereType, detail: meetingWhereDetail } =
+    normalizeMeetingWhere({
+      meetingWhereType: req.body.meetingWhereType,
+      meetingWhereDetail: req.body.meetingWhereDetail,
+    });
 
   const { host, eventType } = await loadPublicEventContext(
     hostUsername,
@@ -118,6 +136,8 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
             bookerEmail,
             answers: answers ?? [],
             notes: notes ?? "",
+            meetingWhereType,
+            meetingWhereDetail,
           },
         ],
         { session }
@@ -149,6 +169,26 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
   const populated = await Booking.findById(created._id)
     .populate("eventTypeId", "title slug durationMinutes description")
     .populate("hostUserId", "username fullName email avatar");
+
+  const et = populated.eventTypeId;
+  const hu = populated.hostUserId;
+  queueEmail(() =>
+    sendBookingConfirmationEmail({
+      bookerEmail: populated.bookerEmail,
+      bookerName: populated.bookerName,
+      hostEmail: hu?.email,
+      hostName: hu?.fullName || hu?.username || "Host",
+      eventTitle: et?.title || "Meeting",
+      startAt: populated.startAt,
+      endAt: populated.endAt,
+      hostUsername: hu?.username || hostUsername,
+      eventSlug: et?.slug || eventSlug,
+      bookingId: String(populated._id),
+      confirmationToken: rawToken,
+      meetingWhereType: populated.meetingWhereType,
+      meetingWhereDetail: populated.meetingWhereDetail,
+    })
+  );
 
   return res.status(201).json(
     new ApiResponse(201, "Booking created", {
@@ -209,10 +249,25 @@ export const cancelPublicBooking = asyncHandler(async (req, res) => {
     throw new ApiError(400, "This booking was already rescheduled");
   }
 
+  const populatedForEmail = await Booking.findById(booking._id)
+    .populate("eventTypeId", "title")
+    .lean();
+
   booking.status = BOOKING_STATUS.CANCELLED;
   booking.cancellationReason = cancellationReason ?? "";
   await booking.save();
   await BookingToken.deleteMany({ bookingId: booking._id });
+
+  if (populatedForEmail) {
+    queueEmail(() =>
+      sendBookingCancelledEmail({
+        bookerEmail: populatedForEmail.bookerEmail,
+        bookerName: populatedForEmail.bookerName,
+        eventTitle: populatedForEmail.eventTypeId?.title || "Meeting",
+        startAt: populatedForEmail.startAt,
+      })
+    );
+  }
 
   return res
     .status(200)
@@ -248,6 +303,18 @@ export const reschedulePublicBooking = asyncHandler(async (req, res) => {
 
   const eventType = booking.eventTypeId;
   if (!eventType) throw new ApiError(404, "Event type missing");
+
+  const whereInput = {
+    meetingWhereType:
+      req.body.meetingWhereType ?? booking.meetingWhereType ?? "cal-video",
+    meetingWhereDetail:
+      req.body.meetingWhereDetail !== undefined &&
+      req.body.meetingWhereDetail !== null
+        ? req.body.meetingWhereDetail
+        : (booking.meetingWhereDetail ?? ""),
+  };
+  const { type: meetingWhereType, detail: meetingWhereDetail } =
+    normalizeMeetingWhere(whereInput);
 
   const start = new Date(newStartAt);
   const end = new Date(
@@ -305,6 +372,8 @@ export const reschedulePublicBooking = asyncHandler(async (req, res) => {
             answers: booking.answers ?? [],
             notes: booking.notes ?? "",
             rescheduledFromBookingId: booking._id,
+            meetingWhereType,
+            meetingWhereDetail,
           },
         ],
         { session }
@@ -339,6 +408,26 @@ export const reschedulePublicBooking = asyncHandler(async (req, res) => {
   const populated = await Booking.findById(created._id)
     .populate("eventTypeId", "title slug durationMinutes description")
     .populate("hostUserId", "username fullName email avatar");
+
+  const etNew = populated.eventTypeId;
+  const huNew = populated.hostUserId;
+  queueEmail(() =>
+    sendBookingRescheduledEmail({
+      bookerEmail: populated.bookerEmail,
+      bookerName: populated.bookerName,
+      hostEmail: huNew?.email,
+      hostName: huNew?.fullName || huNew?.username || "Host",
+      eventTitle: etNew?.title || "Meeting",
+      startAt: populated.startAt,
+      endAt: populated.endAt,
+      hostUsername: huNew?.username,
+      eventSlug: etNew?.slug,
+      bookingId: String(populated._id),
+      confirmationToken: rawToken,
+      meetingWhereType: populated.meetingWhereType,
+      meetingWhereDetail: populated.meetingWhereDetail,
+    })
+  );
 
   return res.status(200).json(
     new ApiResponse(200, "Booking rescheduled", {

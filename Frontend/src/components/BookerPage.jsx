@@ -6,6 +6,10 @@ import React, {
 } from "react";
 import { Icon } from "./Icon";
 import { apiData } from "../api/client.js";
+import {
+  MEETING_WHERE_OPTIONS,
+  resolveBookingWhereParts,
+} from "../utils/meetingWhere.js";
 
 const TZ_OPTIONS = [
   { value: "Asia/Kolkata", label: "Asia/Kolkata" },
@@ -13,6 +17,9 @@ const TZ_OPTIONS = [
   { value: "Europe/London", label: "Europe/London" },
   { value: "UTC", label: "UTC" },
 ];
+
+/** Confirmation card always shows times in IST (Indian Standard Time). */
+const ACK_DISPLAY_TZ = "Asia/Kolkata";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -64,32 +71,6 @@ function formatSlotTime(iso, use24h, timeZone) {
   }
 }
 
-function formatDateLong(iso, tz) {
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    }).format(new Date(iso));
-  } catch {
-    return "";
-  }
-}
-
-function timeZoneLongName(iso, tz) {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      timeZoneName: "long",
-    }).formatToParts(new Date(iso));
-    return parts.find((p) => p.type === "timeZoneName")?.value || tz;
-  } catch {
-    return tz;
-  }
-}
-
 function formatTime12(iso, tz) {
   try {
     return new Intl.DateTimeFormat("en-US", {
@@ -106,9 +87,50 @@ function formatTime12(iso, tz) {
   }
 }
 
-function formatAckWhenRange(ack) {
-  const line = `${formatTime12(ack.startAt, ack.timezone)} - ${formatTime12(ack.endAt, ack.timezone)}`;
-  return `${line} (${timeZoneLongName(ack.startAt, ack.timezone)})`;
+function formatAckIstSingleLine(isoStart, isoEnd) {
+  try {
+    const datePart = new Intl.DateTimeFormat("en-IN", {
+      timeZone: ACK_DISPLAY_TZ,
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(isoStart));
+    const t1 = formatTime12(isoStart, ACK_DISPLAY_TZ);
+    const t2 = formatTime12(isoEnd, ACK_DISPLAY_TZ);
+    return `${datePart} | ${t1} - ${t2} (Asia/Calcutta)`;
+  } catch {
+    return "";
+  }
+}
+
+function publicAppOrigin() {
+  const v = import.meta.env?.VITE_PUBLIC_APP_URL;
+  if (v) return String(v).replace(/\/$/, "");
+  if (typeof window !== "undefined")
+    return window.location.origin.replace(/\/$/, "");
+  return "";
+}
+
+function meetingPageUrl(ack) {
+  if (!ack?.hostUsername || !ack?.eventSlug) return "";
+  return `${publicAppOrigin()}/book/${encodeURIComponent(ack.hostUsername)}/${encodeURIComponent(ack.eventSlug)}`;
+}
+
+function validateMeetingWhereForSubmit(type, detail) {
+  const d = (detail || "").trim();
+  if (type === "zoom" || type === "custom-link") {
+    if (!/^https?:\/\//i.test(d)) {
+      return "Enter a valid https link for this location type.";
+    }
+  }
+  if (type === "google-meet" && d && !/^https?:\/\//i.test(d)) {
+    return "Google Meet link must start with https://";
+  }
+  if ((type === "phone" || type === "in-person") && !d) {
+    return "Please enter the phone number or address for this location.";
+  }
+  return "";
 }
 
 function buildAckFromApi(apiPayload, event, tz, meta) {
@@ -118,6 +140,13 @@ function buildAckFromApi(apiPayload, event, tz, meta) {
     typeof b.hostUserId === "object" && b.hostUserId ? b.hostUserId : {};
   const et =
     typeof b.eventTypeId === "object" && b.eventTypeId ? b.eventTypeId : {};
+  const mType = b.meetingWhereType || "cal-video";
+  const mDetail = b.meetingWhereDetail || "";
+  const pageHref = meetingPageUrl({
+    hostUsername: meta?.hostUsername ?? "",
+    eventSlug: meta?.eventSlug ?? "",
+  });
+  const w = resolveBookingWhereParts(mType, mDetail, pageHref);
   return {
     eventTitle: et.title || event.title,
     durationMinutes: et.durationMinutes ?? event.duration,
@@ -128,7 +157,9 @@ function buildAckFromApi(apiPayload, event, tz, meta) {
     startAt: new Date(b.startAt).toISOString(),
     endAt: new Date(b.endAt).toISOString(),
     timezone: tz,
-    location: event.location,
+    location: w.displayLabel,
+    meetingWhereType: mType,
+    meetingWhereDetail: mDetail,
     bookingId: String(b._id),
     confirmationToken: apiPayload.confirmationToken,
     hostUsername: meta?.hostUsername ?? "",
@@ -149,11 +180,26 @@ function icsDateUtc(d) {
 }
 
 function buildIcs(ack) {
-  const uid = `${ack.bookingId}-${Date.now()}@scalar-booking`;
+  const uid = `${ack.bookingId}-${Date.now()}@calclo.com`;
+  const pageUrl = meetingPageUrl(ack);
+  const w = resolveBookingWhereParts(
+    ack.meetingWhereType || "cal-video",
+    ack.meetingWhereDetail || "",
+    pageUrl
+  );
+  const loc = w.icsLocation || pageUrl;
+  const urlLine = w.icsUrl || pageUrl;
+  const descExtra = w.plainNote
+    ? `\\n${w.displayLabel}: ${w.plainNote}`
+    : w.linkHref
+      ? `\\n${w.displayLabel}: ${w.linkHref}`
+      : pageUrl
+        ? `\\n${pageUrl}`
+        : "";
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Scalar//Book//EN",
+    "PRODID:-//calclo.com//Booking//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",
@@ -162,7 +208,9 @@ function buildIcs(ack) {
     `DTSTART:${icsDateUtc(new Date(ack.startAt))}`,
     `DTEND:${icsDateUtc(new Date(ack.endAt))}`,
     `SUMMARY:${escapeIcs(ack.eventTitle)}`,
-    `DESCRIPTION:${escapeIcs(`Host: ${ack.hostName} (${ack.hostEmail || "n/a"})\\nGuest: ${ack.guestName} (${ack.guestEmail})`)}`,
+    `DESCRIPTION:${escapeIcs(`Host: ${ack.hostName} (${ack.hostEmail || "n/a"})\\nGuest: ${ack.guestName} (${ack.guestEmail})${descExtra}`)}`,
+    ...(loc ? [`LOCATION:${escapeIcs(loc)}`] : []),
+    ...(urlLine ? [`URL:${escapeIcs(urlLine)}`] : []),
     "END:VEVENT",
     "END:VCALENDAR",
   ];
@@ -226,9 +274,13 @@ function yahooCalendarUrl(ack) {
 
 function DetailRow({ label, children }) {
   return (
-    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px]">
-      <div className="w-12 shrink-0 font-medium text-[#737373] sm:w-14">{label}</div>
-      <div className="min-w-0 text-[#fafafa]">{children}</div>
+    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+      <div className="w-14 shrink-0 font-semibold text-zinc-500 dark:text-zinc-400">
+        {label}
+      </div>
+      <div className="min-w-0 text-left text-zinc-900 dark:text-zinc-50">
+        {children}
+      </div>
     </div>
   );
 }
@@ -241,69 +293,120 @@ function BookingAcknowledgement({
   cancelBusy,
 }) {
   const what = `${ack.durationMinutes} min meeting between ${ack.hostName} and ${ack.guestName}`;
+  const pageUrl = meetingPageUrl(ack);
+  const where = resolveBookingWhereParts(
+    ack.meetingWhereType || "cal-video",
+    ack.meetingWhereDetail || "",
+    pageUrl
+  );
+  const whenIst = formatAckIstSingleLine(ack.startAt, ack.endAt);
 
   return (
     <div className="w-full max-w-[520px] animate-in fade-in zoom-in-95 duration-300">
-      <div className="rounded-2xl border border-[#2a2a2a] bg-[#141414] px-6 py-8 shadow-2xl sm:px-10 sm:py-10">
+      <div className="rounded-2xl border border-zinc-200 bg-white px-6 py-8 shadow-sm dark:border-[#2a2a2a] dark:bg-[#141414] dark:shadow-2xl sm:px-10 sm:py-10">
         <div className="flex flex-col items-center text-center">
-          <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-green-600 text-white shadow-lg shadow-green-900/40">
+          <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-green-700 shadow-sm dark:bg-green-600 dark:text-white dark:shadow-lg dark:shadow-green-900/40">
             <Icon name="check" className="h-7 w-7" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-[#fafafa] sm:text-2xl">
-            This meeting is scheduled
+          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-[#fafafa] sm:text-2xl">
+            Your event has been scheduled
           </h1>
-          <p className="mt-2 max-w-[400px] text-[13px] leading-relaxed text-[#9a9a9a]">
-            We sent an email with a calendar invitation with the details to everyone.
+          <p className="mt-2 max-w-[400px] text-[13px] leading-relaxed text-zinc-500 dark:text-[#9a9a9a]">
+            We sent an email to everyone with this information.
           </p>
         </div>
 
-        <div className="my-8 border-t border-[#2a2a2a]" />
+        <div className="my-8 border-t border-zinc-200 dark:border-[#2a2a2a]" />
 
         <div className="space-y-5">
           <DetailRow label="What">
             <span className="leading-snug">{what}</span>
           </DetailRow>
           <DetailRow label="When">
-            <div className="space-y-1">
-              <div>{formatDateLong(ack.startAt, ack.timezone)}</div>
-              <div className="text-[#a3a3a3]">{formatAckWhenRange(ack)}</div>
-            </div>
+            <span className="leading-snug text-zinc-700 dark:text-zinc-200">
+              {whenIst}
+            </span>
           </DetailRow>
           <DetailRow label="Who">
             <div className="space-y-4">
               <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{ack.hostName}</span>
-                  <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                    Host
+                <p className="font-medium">
+                  {ack.hostName}{" "}
+                  <span className="font-normal text-zinc-500 dark:text-zinc-400">
+                    — Organizer
                   </span>
-                </div>
+                </p>
                 {ack.hostEmail ? (
-                  <div className="mt-1 text-[13px] text-[#a3a3a3]">{ack.hostEmail}</div>
+                  <a
+                    href={`mailto:${ack.hostEmail}`}
+                    className="mt-1 block text-sm text-blue-600 underline underline-offset-2 dark:text-blue-400"
+                  >
+                    {ack.hostEmail}
+                  </a>
                 ) : null}
               </div>
               <div>
-                <div className="font-medium">{ack.guestName}</div>
-                <div className="mt-1 text-[13px] text-[#a3a3a3]">{ack.guestEmail}</div>
+                <p className="font-medium">
+                  {ack.guestName}{" "}
+                  <span className="font-normal text-zinc-500 dark:text-zinc-400">
+                    — Guest
+                  </span>
+                </p>
+                <a
+                  href={`mailto:${ack.guestEmail}`}
+                  className="mt-1 block text-sm text-blue-600 underline underline-offset-2 dark:text-blue-400"
+                >
+                  {ack.guestEmail}
+                </a>
               </div>
             </div>
           </DetailRow>
           <DetailRow label="Where">
-            <div className="flex items-center gap-2">
-              <span>{ack.location}</span>
-              <Icon name="external-link" className="h-3.5 w-3.5 text-[#737373]" />
+            <div className="space-y-2">
+              {where.linkHref ? (
+                <>
+                  <a
+                    href={where.linkHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block text-blue-600 underline underline-offset-2 dark:text-blue-400"
+                  >
+                    {where.displayLabel}
+                  </a>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Meeting URL:{" "}
+                    <a
+                      href={where.linkHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="break-all text-blue-600 underline underline-offset-2 dark:text-blue-400"
+                    >
+                      {where.linkHref}
+                    </a>
+                  </p>
+                </>
+              ) : (
+                <>
+                  <span>{where.displayLabel}</span>
+                  {where.plainNote ? (
+                    <p className="text-sm whitespace-pre-wrap text-zinc-600 dark:text-zinc-300">
+                      {where.plainNote}
+                    </p>
+                  ) : null}
+                </>
+              )}
             </div>
           </DetailRow>
         </div>
 
-        <div className="my-8 border-t border-[#2a2a2a]" />
+        <div className="my-8 border-t border-zinc-200 dark:border-[#2a2a2a]" />
 
-        <p className="text-center text-[13px] text-[#9a9a9a]">
+        <p className="text-center text-[13px] text-zinc-500 dark:text-[#9a9a9a]">
           Need to make a change?{" "}
           <button
             type="button"
             onClick={onReschedule}
-            className="font-medium text-[#fafafa] underline decoration-[#525252] underline-offset-2 hover:decoration-[#fafafa] disabled:opacity-40"
+            className="font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600 disabled:opacity-40 dark:text-[#fafafa] dark:decoration-[#525252] dark:hover:decoration-[#fafafa]"
             disabled={!ack.confirmationToken || !ack.hostUsername || !ack.eventSlug}
           >
             Reschedule
@@ -313,14 +416,14 @@ function BookingAcknowledgement({
             type="button"
             onClick={onCancel}
             disabled={cancelBusy || !ack.confirmationToken}
-            className="font-medium text-[#fafafa] underline decoration-[#525252] underline-offset-2 hover:decoration-[#fafafa] disabled:opacity-40"
+            className="font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600 disabled:opacity-40 dark:text-[#fafafa] dark:decoration-[#525252] dark:hover:decoration-[#fafafa]"
           >
             {cancelBusy ? "Cancelling…" : "Cancel"}
           </button>
         </p>
 
-        <div className="mt-8 border-t border-[#2a2a2a] pt-6">
-          <p className="mb-3 text-center text-xs font-semibold uppercase tracking-wider text-[#737373]">
+        <div className="mt-8 border-t border-zinc-200 pt-6 dark:border-[#2a2a2a]">
+          <p className="mb-3 text-center text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-[#737373]">
             Add to calendar
           </p>
           <div className="flex flex-wrap justify-center gap-2">
@@ -328,7 +431,7 @@ function BookingAcknowledgement({
               href={googleCalendarUrl(ack)}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#333] bg-[#1a1a1a] text-xs font-bold text-[#fafafa] transition hover:border-[#525252] hover:bg-[#222]"
+              className="flex h-11 w-11 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-900 transition hover:border-zinc-300 hover:bg-zinc-100 dark:border-[#333] dark:bg-[#1a1a1a] dark:text-[#fafafa] dark:hover:border-[#525252] dark:hover:bg-[#222]"
               title="Google Calendar"
             >
               G
@@ -337,7 +440,7 @@ function BookingAcknowledgement({
               href={outlookCalendarUrl(ack)}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#333] bg-[#1a1a1a] text-xs font-bold text-[#fafafa] transition hover:border-[#525252] hover:bg-[#222]"
+              className="flex h-11 w-11 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-900 transition hover:border-zinc-300 hover:bg-zinc-100 dark:border-[#333] dark:bg-[#1a1a1a] dark:text-[#fafafa] dark:hover:border-[#525252] dark:hover:bg-[#222]"
               title="Outlook"
             >
               O
@@ -345,7 +448,7 @@ function BookingAcknowledgement({
             <button
               type="button"
               onClick={() => downloadIcs(ack)}
-              className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#333] bg-[#1a1a1a] text-[10px] font-bold leading-tight text-[#fafafa] transition hover:border-[#525252] hover:bg-[#222]"
+              className="flex h-11 w-11 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 text-[10px] font-bold leading-tight text-zinc-900 transition hover:border-zinc-300 hover:bg-zinc-100 dark:border-[#333] dark:bg-[#1a1a1a] dark:text-[#fafafa] dark:hover:border-[#525252] dark:hover:bg-[#222]"
               title="Apple Calendar / .ics"
             >
               .ics
@@ -354,7 +457,7 @@ function BookingAcknowledgement({
               href={yahooCalendarUrl(ack)}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#333] bg-[#1a1a1a] text-xs font-bold text-[#fafafa] transition hover:border-[#525252] hover:bg-[#222]"
+              className="flex h-11 w-11 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-900 transition hover:border-zinc-300 hover:bg-zinc-100 dark:border-[#333] dark:bg-[#1a1a1a] dark:text-[#fafafa] dark:hover:border-[#525252] dark:hover:bg-[#222]"
               title="Yahoo Calendar"
             >
               Y
@@ -366,7 +469,7 @@ function BookingAcknowledgement({
           <button
             type="button"
             onClick={onHome}
-            className="rounded-lg border border-[#333] px-6 py-2.5 text-sm font-semibold text-[#e5e5e5] transition hover:bg-[#1f1f1f]"
+            className="rounded-lg border border-zinc-200 bg-white px-6 py-2.5 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50 dark:border-[#333] dark:bg-transparent dark:text-[#e5e5e5] dark:hover:bg-[#1f1f1f]"
           >
             Back to home
           </button>
@@ -404,11 +507,12 @@ export function BookerPage({
       initial: "h",
     },
     duration: 15,
-    location: "Cal Video",
     description: "Welcome to my scheduling page. Please select a time that works for you.",
   });
   const [bookerName, setBookerName] = useState("");
   const [bookerEmail, setBookerEmail] = useState("");
+  const [meetingWhereType, setMeetingWhereType] = useState("cal-video");
+  const [meetingWhereDetail, setMeetingWhereDetail] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState(null);
   const [ackDetails, setAckDetails] = useState(null);
@@ -444,7 +548,6 @@ export function BookerPage({
         title: data.title,
         user: { name, avatar, initial },
         duration: data.durationMinutes,
-        location: "Cal Video",
         description: data.description || "",
       });
     } catch (e) {
@@ -492,6 +595,8 @@ export function BookerPage({
         setRescheduleCtx({ bookingId: bid, token: tok });
         setBookerName(b.bookerName || "");
         setBookerEmail(b.bookerEmail || "");
+        setMeetingWhereType(b.meetingWhereType || "cal-video");
+        setMeetingWhereDetail(b.meetingWhereDetail || "");
         const d = new Date(b.startAt);
         const y = d.getFullYear();
         const m0 = d.getMonth();
@@ -606,6 +711,43 @@ export function BookerPage({
     [hostUsername, eventSlug]
   );
 
+  const bookingPageHref = useMemo(() => {
+    if (!hostUsername || !eventSlug) return "";
+    return `${publicAppOrigin()}/book/${encodeURIComponent(hostUsername)}/${encodeURIComponent(eventSlug)}`;
+  }, [hostUsername, eventSlug]);
+
+  const meetingWhereSummary = useMemo(() => {
+    const w = resolveBookingWhereParts(
+      meetingWhereType,
+      meetingWhereDetail,
+      bookingPageHref
+    );
+    if (w.plainNote) {
+      return w.plainNote.length > 52
+        ? `${w.displayLabel} · ${w.plainNote.slice(0, 49)}…`
+        : `${w.displayLabel} · ${w.plainNote}`;
+    }
+    return w.displayLabel;
+  }, [meetingWhereType, meetingWhereDetail, bookingPageHref]);
+
+  const meetingWhereFieldMeta = useMemo(
+    () => MEETING_WHERE_OPTIONS.find((o) => o.value === meetingWhereType),
+    [meetingWhereType]
+  );
+
+  useEffect(() => {
+    const q = new URLSearchParams(navSearch || "");
+    if (
+      q.get("reschedule") === "1" &&
+      q.get("bookingId") &&
+      q.get("token")
+    ) {
+      return;
+    }
+    setMeetingWhereType("cal-video");
+    setMeetingWhereDetail("");
+  }, [hostUsername, eventSlug, navSearch]);
+
   const handleRescheduleFromAck = useCallback(() => {
     if (!ackDetails?.confirmationToken) return;
     const path = `/book/${encodeURIComponent(ackDetails.hostUsername)}/${encodeURIComponent(ackDetails.eventSlug)}?reschedule=1&bookingId=${encodeURIComponent(ackDetails.bookingId)}&token=${encodeURIComponent(ackDetails.confirmationToken)}`;
@@ -633,9 +775,9 @@ export function BookerPage({
 
   if (phase === "success" && ackDetails) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] text-[#fafafa] flex flex-col items-center justify-center p-4 md:p-6 font-sans selection:bg-white/20">
+      <div className="min-h-screen bg-zinc-100 text-zinc-900 selection:bg-zinc-900/10 dark:bg-[#0a0a0a] dark:text-[#fafafa] dark:selection:bg-white/20 flex flex-col items-center justify-center p-4 md:p-6 font-sans">
         {error ? (
-          <div className="mb-3 text-sm text-red-400 max-w-lg text-center">{error}</div>
+          <div className="mb-3 text-sm text-red-600 max-w-lg text-center dark:text-red-400">{error}</div>
         ) : null}
         <BookingAcknowledgement
           ack={ackDetails}
@@ -644,8 +786,8 @@ export function BookerPage({
           onCancel={handleCancelFromAck}
           cancelBusy={cancelAckBusy}
         />
-        <p className="mt-8 text-center text-[10px] font-medium tracking-wide text-[#3f3f3f]">
-          POWERED BY <span className="text-[#555]">CAL.COM</span>
+        <p className="mt-8 text-center text-sm font-semibold tracking-tight text-zinc-700 dark:text-zinc-400">
+          calclo.com
         </p>
       </div>
     );
@@ -672,9 +814,9 @@ export function BookerPage({
       <div className="w-full max-w-[1040px] rounded-2xl border border-[#262626] bg-[#101010] shadow-2xl overflow-hidden flex flex-col lg:flex-row lg:min-h-[560px]">
         {/* ── Column 1: event meta ───────────────────────────── */}
         <aside className="w-full lg:w-[280px] shrink-0 border-b lg:border-b-0 lg:border-r border-[#262626] p-6 md:p-8 flex flex-col gap-8">
-          <button
+              <button 
             type="button"
-            onClick={() => {
+                onClick={() => {
               if (phase === "form") {
                 setPhase("schedule");
                 setSelectedTime(null);
@@ -689,9 +831,9 @@ export function BookerPage({
             }}
             className="self-start p-2 -ml-2 rounded-full text-[#888] hover:text-[#fafafa] hover:bg-[#1f1f1f] transition-colors"
             aria-label="Go back"
-          >
-            <Icon name="arrow-left" className="h-4 w-4" />
-          </button>
+              >
+                <Icon name="arrow-left" className="h-4 w-4" />
+              </button>
 
           <div className="flex flex-col gap-5">
             {event.user.avatar ? (
@@ -711,16 +853,16 @@ export function BookerPage({
                 {event.title}
               </h1>
             </div>
-          </div>
+              </div>
 
           <div className="space-y-3 text-[13px]">
             <div className="flex items-center gap-2.5 text-[#a3a3a3]">
               <Icon name="clock" className="h-4 w-4 shrink-0 opacity-80" />
               <span>{event.duration}m</span>
-            </div>
+                 </div>
             <div className="flex items-center gap-2.5 text-[#a3a3a3]">
               <Icon name="video" className="h-4 w-4 shrink-0 opacity-80" />
-              <span>{event.location}</span>
+              <span className="min-w-0 leading-snug">{meetingWhereSummary}</span>
             </div>
             <div className="relative pt-1">
               <div className="relative flex items-center gap-2.5 rounded-lg border border-[#333] bg-[#141414] px-3 py-2.5 pr-9">
@@ -755,13 +897,13 @@ export function BookerPage({
           {selectedYmd && selectedTime ? (
             <div className="pt-2 border-t border-[#262626] space-y-2 text-[13px] text-[#a3a3a3]">
               <div className="flex items-center gap-2">
-                <Icon name="calendar" className="h-4 w-4" />
+                       <Icon name="calendar" className="h-4 w-4" />
                 <span>{selectedDateLabel}</span>
-              </div>
+                    </div>
               <div className="flex items-center gap-2">
-                <Icon name="clock" className="h-4 w-4" />
-                <span>{selectedTime}</span>
-              </div>
+                       <Icon name="clock" className="h-4 w-4" />
+                       <span>{selectedTime}</span>
+                    </div>
             </div>
           ) : null}
         </aside>
@@ -789,16 +931,16 @@ export function BookerPage({
                 >
                   <Icon name="chevron-right" className="h-4 w-4" />
                 </button>
-              </div>
-            </div>
+           </div>
+        </div>
 
             <div className="grid grid-cols-7 gap-y-1 gap-x-1 text-center text-[10px] font-semibold uppercase tracking-wider text-[#666] mb-2">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                 <div key={d} className="py-1">
                   {d}
-                </div>
+                    </div>
               ))}
-            </div>
+                 </div>
 
             <div className="grid grid-cols-7 gap-1">
               {gridCells.map((day, idx) => {
@@ -808,8 +950,8 @@ export function BookerPage({
                 const { ymd, isPast, isSelected } = dayMeta(day);
                 const clickable = !isPast;
 
-                return (
-                  <button
+                      return (
+                        <button
                     key={ymd}
                     type="button"
                     disabled={!clickable}
@@ -828,12 +970,12 @@ export function BookerPage({
                     ) : (
                       <span className="h-1 w-1 shrink-0" aria-hidden />
                     )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
+                        </button>
+                      );
+                    })}
+                 </div>
+                 </div>
+                 
           {/* Times / form / success */}
           <section className="w-full md:w-[300px] lg:w-[320px] shrink-0 flex flex-col bg-[#0c0c0c] p-6 md:p-7">
             {phase === "schedule" && (
@@ -862,9 +1004,9 @@ export function BookerPage({
                           className={`px-2.5 py-1 rounded-md transition ${use24h ? "bg-[#2a2a2a] text-white" : "text-[#888]"}`}
                         >
                           24h
-                        </button>
-                      </div>
-                    </div>
+                      </button>
+                 </div>
+              </div>
 
                     <div className="flex flex-col gap-2 overflow-y-auto max-h-[min(420px,calc(100vh-220px))] pr-1 custom-scrollbar">
                       {slotsLoading ? (
@@ -915,6 +1057,21 @@ export function BookerPage({
                     e.preventDefault();
                     try {
                       setError(null);
+                      const whereErr = validateMeetingWhereForSubmit(
+                        meetingWhereType,
+                        meetingWhereDetail
+                      );
+                      if (whereErr) {
+                        setError(whereErr);
+                        return;
+                      }
+                      const wherePayload = {
+                        meetingWhereType,
+                        meetingWhereDetail:
+                          meetingWhereType === "cal-video"
+                            ? ""
+                            : meetingWhereDetail.trim(),
+                      };
                       let payload;
                       if (rescheduleCtx) {
                         payload = await apiData(
@@ -924,6 +1081,7 @@ export function BookerPage({
                             json: {
                               token: rescheduleCtx.token,
                               newStartAt: selectedSlotStartAt,
+                              ...wherePayload,
                             },
                           }
                         );
@@ -942,6 +1100,7 @@ export function BookerPage({
                               bookerEmail,
                               answers: [],
                               notes,
+                              ...wherePayload,
                             },
                           }
                         );
@@ -963,59 +1122,112 @@ export function BookerPage({
                     }
                   }}
                 >
-                  <div className="space-y-1.5">
+                    <div className="space-y-1.5">
                     <label className="text-[11px] font-bold uppercase tracking-wide text-[#737373]">
                       Name
                     </label>
-                    <input
-                      required
-                      type="text"
+                       <input 
+                         required
+                         type="text" 
                       placeholder="Jane Doe"
                       value={bookerName}
                       onChange={(e) => setBookerName(e.target.value)}
                       readOnly={!!rescheduleCtx}
                       className="w-full rounded-lg border border-[#333] bg-[#141414] px-3 py-2.5 text-sm text-[#fafafa] outline-none placeholder:text-[#525252] focus:border-[#525252] read-only:opacity-70"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
+                       />
+                    </div>
+                    <div className="space-y-1.5">
                     <label className="text-[11px] font-bold uppercase tracking-wide text-[#737373]">
                       Email
                     </label>
-                    <input
-                      required
-                      type="email"
+                       <input 
+                         required
+                         type="email" 
                       placeholder="you@company.com"
                       value={bookerEmail}
                       onChange={(e) => setBookerEmail(e.target.value)}
                       readOnly={!!rescheduleCtx}
                       className="w-full rounded-lg border border-[#333] bg-[#141414] px-3 py-2.5 text-sm text-[#fafafa] outline-none placeholder:text-[#525252] focus:border-[#525252] read-only:opacity-70"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
+                       />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold uppercase tracking-wide text-[#737373]">
+                        Location
+                      </label>
+                      <div className="relative flex items-center gap-2.5 rounded-lg border border-[#333] bg-[#141414] px-3 py-2.5 pr-9">
+                        <Icon name="link" className="h-4 w-4 shrink-0 text-[#888]" />
+                        <select
+                          className="w-full min-w-0 cursor-pointer bg-transparent text-[13px] font-medium text-[#e5e5e5] outline-none appearance-none"
+                          style={{ colorScheme: "dark" }}
+                          value={meetingWhereType}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setMeetingWhereType(v);
+                            if (v === "cal-video") setMeetingWhereDetail("");
+                          }}
+                          aria-label="Meeting location"
+                        >
+                          {MEETING_WHERE_OPTIONS.map((o) => (
+                            <option
+                              key={o.value}
+                              value={o.value}
+                              className="bg-[#141414] text-[#e5e5e5]"
+                            >
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        <Icon
+                          name="chevron-down"
+                          className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#666]"
+                        />
+                      </div>
+                    </div>
+                    {meetingWhereFieldMeta?.needsDetail ? (
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold uppercase tracking-wide text-[#737373]">
+                          {meetingWhereFieldMeta.detailLabel}
+                        </label>
+                        <input
+                          type={meetingWhereFieldMeta.inputType || "url"}
+                          value={meetingWhereDetail}
+                          onChange={(e) => setMeetingWhereDetail(e.target.value)}
+                          placeholder={meetingWhereFieldMeta.detailPlaceholder}
+                          required={meetingWhereFieldMeta.needsDetail === true}
+                          className="w-full rounded-lg border border-[#333] bg-[#141414] px-3 py-2.5 text-sm text-[#fafafa] outline-none placeholder:text-[#525252] focus:border-[#525252]"
+                        />
+                        {meetingWhereFieldMeta.needsDetail === "optional" ? (
+                          <p className="text-[11px] text-[#525252] leading-snug">
+                            Optional. If empty, guests use your calclo.com booking link.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div className="space-y-1.5">
                     <label className="text-[11px] font-bold uppercase tracking-wide text-[#737373]">
                       Notes
                     </label>
-                    <textarea
+                       <textarea 
                       rows={3}
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
                       placeholder="Anything we should know?"
                       className="w-full resize-none rounded-lg border border-[#333] bg-[#141414] px-3 py-2.5 text-sm text-[#fafafa] outline-none placeholder:text-[#525252] focus:border-[#525252]"
-                    />
-                  </div>
+                       />
+                    </div>
                   <button type="submit" className="btn-primary mt-2 w-full py-3 h-auto text-sm font-semibold">
                     {rescheduleCtx ? "Confirm reschedule" : "Confirm"}
-                  </button>
-                </form>
+                    </button>
+                 </form>
               </div>
-            )}
+           )}
 
           </section>
         </div>
       </div>
 
-      <p className="mt-6 text-center text-[10px] font-medium tracking-wide text-[#3f3f3f]">
-        POWERED BY <span className="text-[#555]">CAL.COM</span>
+      <p className="mt-6 text-center text-sm font-semibold tracking-tight text-zinc-500">
+        calclo.com
       </p>
     </div>
   );
