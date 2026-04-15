@@ -59,7 +59,7 @@ function App() {
         return <ReferPage />;
       default:
         if (currentPath.startsWith("/settings")) {
-          return <SettingsPage activePath={currentPath} />;
+          return <SettingsPage activePath={currentPath} onNavigate={navigate} />;
         }
         return (
           <div className="flex-1 flex items-center justify-center text-subtle italic p-8">
