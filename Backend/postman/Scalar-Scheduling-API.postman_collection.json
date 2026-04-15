@@ -272,9 +272,23 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"newStartAt\": \"2026-04-22T04:00:00.000Z\"\n}"
+              "raw": "{\n  \"newStartAt\": \"2026-04-22T04:00:00.000Z\",\n  \"durationMinutes\": 30\n}"
             },
             "url": "{{baseUrl}}/api/v1/bookings/{{bookingId}}/reschedule"
+          }
+        },
+        {
+          "name": "Update booking duration",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"durationMinutes\": 45\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/bookings/{{bookingId}}"
           }
         }
       ]
@@ -315,7 +329,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"startAt\": \"2026-04-21T03:30:00.000Z\",\n  \"bookerName\": \"Test Booker\",\n  \"bookerEmail\": \"booker@example.com\",\n  \"answers\": [{ \"key\": \"topic\", \"value\": \"Product demo\" }],\n  \"notes\": \"Looking forward to it.\",\n  \"meetingWhereType\": \"cal-video\",\n  \"meetingWhereDetail\": \"\"\n}"
+              "raw": "{\n  \"startAt\": \"2026-04-21T03:30:00.000Z\",\n  \"bookerName\": \"Test Booker\",\n  \"bookerEmail\": \"booker@example.com\",\n  \"guestEmails\": [\"guest1@example.com\", \"guest2@example.com\"],\n  \"answers\": [{ \"key\": \"topic\", \"value\": \"Product demo\" }],\n  \"notes\": \"Looking forward to it.\",\n  \"meetingWhereType\": \"cal-video\",\n  \"meetingWhereDetail\": \"\"\n}"
             },
             "url": "{{baseUrl}}/api/v1/public/hosts/{{hostUsername}}/events/{{eventSlug}}/bookings"
           }

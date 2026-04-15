@@ -38,6 +38,17 @@ const bookingSchema = new Schema(
     blockedEndAt: { type: Date, required: true },
     bookerName: { type: String, required: true, trim: true },
     bookerEmail: { type: String, required: true, trim: true, lowercase: true },
+    /** Additional invitees (no booking token); max 10, sanitized on write. */
+    guestEmails: {
+      type: [String],
+      default: [],
+      validate: {
+        validator(v) {
+          return Array.isArray(v) && v.length <= 10;
+        },
+        message: "At most 10 guest emails",
+      },
+    },
     answers: { type: [answerSchema], default: [] },
     notes: { type: String, default: "", trim: true },
     meetingWhereType: {

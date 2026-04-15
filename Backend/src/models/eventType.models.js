@@ -27,6 +27,8 @@ const eventTypeSchema = new Schema(
     description: { type: String, default: "", trim: true },
     slug: { type: String, required: true, trim: true },
     durationMinutes: { type: Number, required: true, min: 1 },
+    /** Extra lengths (minutes) bookers may choose; always includes durationMinutes server-side. */
+    durationOptions: { type: [Number], default: [] },
     hidden: { type: Boolean, default: false },
     active: { type: Boolean, default: true },
     color: { type: String, default: "#292929" },

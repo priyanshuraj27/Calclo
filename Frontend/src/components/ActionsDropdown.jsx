@@ -1,22 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Icon } from './Icon';
+import React, { useRef } from "react";
+import { Icon } from "./Icon";
 
+/** Outside dismiss is handled by the parent row (EventTypeCard) to avoid clipping / double listeners. */
 export function ActionsDropdown({ isOpen, onClose, onAction }) {
   const dropdownRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        onClose();
-      }
-    }
-    if (isOpen) {
-      document.addEventListener('click', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('click', handleClickOutside);
-    };
-  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -42,7 +29,6 @@ export function ActionsDropdown({ isOpen, onClose, onAction }) {
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log(`[ActionsDropdown] Button clicked for action: ${action.id}`);
               onAction(action.id);
               onClose();
             }}

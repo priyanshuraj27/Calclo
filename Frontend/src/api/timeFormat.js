@@ -11,10 +11,18 @@ export function toAmPmFrom24(hm) {
   return `${h}:${String(m).padStart(2, "0")}${ap}`;
 }
 
-/** "9:00am" / "9:00 AM" → "09:00" */
+/** "9:00am" / "9:00 AM" → "09:00"; also accepts "17:00" style 24h */
 export function fromAmPmTo24(s) {
   if (!s || typeof s !== "string") return "09:00";
   const t = s.trim().toLowerCase().replace(/\s/g, "");
+  const m24 = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) {
+    const h = parseInt(m24[1], 10);
+    const min = parseInt(m24[2], 10);
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+      return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+    }
+  }
   const m = t.match(/^(\d{1,2}):(\d{2})(am|pm)$/);
   if (!m) return "09:00";
   let h = parseInt(m[1], 10);

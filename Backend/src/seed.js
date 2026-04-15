@@ -102,6 +102,7 @@ async function ensureEventTypes(hostUserId, scheduleId) {
       title: "15 Min Meeting",
       slug: "15min",
       durationMinutes: 15,
+      durationOptions: [15, 30, 45],
       description: "Short introductory meeting",
       hidden: false,
       color: "#292929",
@@ -110,6 +111,7 @@ async function ensureEventTypes(hostUserId, scheduleId) {
       title: "30 Min Meeting",
       slug: "30min",
       durationMinutes: 30,
+      durationOptions: [30, 45, 60],
       description: "Standard consultation",
       hidden: false,
       color: "#3b82f6",
@@ -143,6 +145,7 @@ async function ensureEventTypes(hostUserId, scheduleId) {
           slug: et.slug,
           description: et.description,
           durationMinutes: et.durationMinutes,
+          durationOptions: et.durationOptions ?? [],
           hidden: et.hidden,
           active: true,
           color: et.color,
@@ -162,6 +165,24 @@ async function ensureEventTypes(hostUserId, scheduleId) {
       { upsert: true }
     );
     console.log("Upserted event type:", et.slug);
+  }
+
+  const fixed = await EventType.updateMany(
+    {
+      hostUserId,
+      slug: "15min",
+      $or: [
+        { durationOptions: { $exists: false } },
+        { durationOptions: { $size: 0 } },
+      ],
+    },
+    { $set: { durationOptions: [15, 30, 45] } }
+  );
+  if (fixed.modifiedCount > 0) {
+    console.log(
+      "Filled default durationOptions on 15min event type:",
+      fixed.modifiedCount
+    );
   }
 }
 

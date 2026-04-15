@@ -181,6 +181,7 @@ function icsAttachment(icsString) {
  * @param {string} p.eventSlug
  * @param {string} p.bookingId
  * @param {string} p.confirmationToken
+ * @param {string[]} [p.guestEmails]
  */
 export async function sendBookingConfirmationEmail(p) {
   const resend = getResend();
@@ -246,6 +247,173 @@ export async function sendBookingConfirmationEmail(p) {
   if (error) {
     throw new Error(error.message || JSON.stringify(error));
   }
+
+  const guests = Array.isArray(p.guestEmails) ? p.guestEmails : [];
+  if (guests.length) {
+    try {
+      await sendBookingGuestInviteEmails(p);
+    } catch (err) {
+      console.error("[email] guest invite batch failed:", err?.message || err);
+    }
+  }
+}
+
+/**
+ * Invites additional guests (no reschedule/cancel links — use primary guest for changes).
+ * Same calendar attachment as the main confirmation.
+ */
+export async function sendBookingGuestInviteEmails(p) {
+  const resend = getResend();
+  if (!resend) {
+    console.warn("[email] RESEND_API_KEY missing; skipping guest invites");
+    return;
+  }
+
+  const guests = (Array.isArray(p.guestEmails) ? p.guestEmails : []).filter(
+    (e) => typeof e === "string" && e.trim()
+  );
+  if (!guests.length) return;
+
+  const meetUrl = meetingPageUrl(p.hostUsername, p.eventSlug);
+  const whenIst = formatWhenIstLine(p.startAt, p.endAt);
+  const what = `${p.eventTitle} — ${p.hostName} & ${p.bookerName}`;
+  const ics = buildBookingIcs(p);
+
+  for (const guestEmail of guests) {
+    const inner = `
+  <div style="text-align:center;margin-bottom:24px;">
+    <h1 style="margin:0;font-size:22px;font-weight:600;color:#18181b;">You&apos;re invited as a guest</h1>
+    <p style="margin:12px 0 0;font-size:14px;color:#52525b;line-height:1.5;">${esc(
+      p.bookerName
+    )} added you to this meeting on ${esc(BRAND)}.</p>
+  </div>
+  <hr style="border:none;border-top:1px solid #e4e4e7;margin:24px 0;" />
+  <p style="margin:0 0 8px;font-size:13px;"><strong>What</strong></p>
+  <p style="margin:0 0 20px;font-size:14px;color:#27272a;">${esc(what)}</p>
+  <p style="margin:0 0 8px;font-size:13px;"><strong>When</strong></p>
+  <p style="margin:0 0 20px;font-size:14px;color:#27272a;">${esc(whenIst)}</p>
+  <p style="margin:0 0 8px;font-size:13px;"><strong>Primary guest</strong></p>
+  <p style="margin:0 0 20px;font-size:14px;color:#27272a;">${esc(p.bookerName)} — <a href="mailto:${esc(
+    p.bookerEmail
+  )}" style="color:#2563eb;">${esc(p.bookerEmail)}</a></p>
+  <div style="margin:0 0 20px;">${whereSectionHtml(p)}</div>
+  <p style="margin:0;font-size:13px;color:#52525b;">Booking page (info only): <a href="${esc(
+    meetUrl
+  )}" style="color:#2563eb;">${esc(meetUrl)}</a></p>
+  <p style="margin:16px 0 0;font-size:13px;color:#71717a;">To reschedule or cancel, ask ${esc(
+    p.bookerName
+  )} (they received the manage link).</p>`;
+
+    const html = emailWrapper(inner);
+    const wherePlain = whereSummaryPlain(p);
+    const text = `You're invited as a guest (${BRAND})\n\nWhat: ${what}\nWhen (IST): ${whenIst}\nPrimary guest: ${p.bookerName} <${p.bookerEmail}>\nWhere: ${wherePlain}\n${meetUrl}`;
+
+    try {
+      const { error } = await resend.emails.send({
+        from: fromAddress(),
+        to: [guestEmail.trim().toLowerCase()],
+        subject: `Invitation: ${p.eventTitle} · ${BRAND}`,
+        html,
+        text,
+        attachments: icsAttachment(ics),
+      });
+      if (error) {
+        console.error("[email] guest invite failed:", guestEmail, error.message);
+      }
+    } catch (err) {
+      console.error("[email] guest invite failed:", guestEmail, err?.message || err);
+    }
+  }
+}
+
+export async function sendBookingGuestRescheduledEmails(p) {
+  const resend = getResend();
+  if (!resend) return;
+  const guests = (Array.isArray(p.guestEmails) ? p.guestEmails : []).filter(
+    (e) => typeof e === "string" && e.trim()
+  );
+  if (!guests.length) return;
+
+  const meetUrl = meetingPageUrl(p.hostUsername, p.eventSlug);
+  const whenIst = formatWhenIstLine(p.startAt, p.endAt);
+
+  for (const guestEmail of guests) {
+    const inner = `
+  <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;color:#18181b;">Meeting time updated</h1>
+  <p style="margin:0;font-size:14px;color:#3f3f46;">Hi,</p>
+  <p style="margin:16px 0 0;font-size:14px;color:#3f3f46;">A meeting you were invited to as a guest has a new time (IST):</p>
+  <p style="margin:12px 0 0;font-size:14px;font-weight:500;color:#18181b;">${esc(
+    p.eventTitle
+  )}</p>
+  <p style="margin:8px 0 0;font-size:14px;color:#27272a;">${esc(whenIst)}</p>
+  <div style="margin:20px 0 0;">${whereSectionHtml(p)}</div>
+  <p style="margin:16px 0 0;font-size:13px;color:#52525b;">${esc(
+    meetUrl
+  )}</p>
+  <p style="margin:16px 0 0;font-size:13px;color:#71717a;">Contact ${esc(
+    p.bookerName
+  )} if you need changes.</p>`;
+
+    const html = emailWrapper(inner);
+    const wherePlain = whereSummaryPlain(p);
+    const text = `Meeting time updated (${BRAND})\n\n${p.eventTitle}\n${whenIst}\nWhere: ${wherePlain}\n${meetUrl}`;
+
+    try {
+      const ics = buildBookingIcs(p);
+      const { error } = await resend.emails.send({
+        from: fromAddress(),
+        to: [guestEmail.trim().toLowerCase()],
+        subject: `Updated: ${p.eventTitle} · ${BRAND}`,
+        html,
+        text,
+        attachments: icsAttachment(ics),
+      });
+      if (error) {
+        console.error("[email] guest reschedule failed:", guestEmail, error.message);
+      }
+    } catch (err) {
+      console.error("[email] guest reschedule failed:", guestEmail, err?.message || err);
+    }
+  }
+}
+
+export async function sendBookingGuestCancelledEmails(p) {
+  const resend = getResend();
+  if (!resend) return;
+  const guests = (Array.isArray(p.guestEmails) ? p.guestEmails : []).filter(
+    (e) => typeof e === "string" && e.trim()
+  );
+  if (!guests.length) return;
+
+  const whenIst = formatWhenIstShort(p.startAt);
+
+  for (const guestEmail of guests) {
+    const inner = `
+  <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;color:#18181b;">Meeting cancelled</h1>
+  <p style="margin:0;font-size:14px;color:#3f3f46;">Hi,</p>
+  <p style="margin:16px 0 0;font-size:14px;color:#3f3f46;">A meeting you were invited to as a guest has been cancelled:</p>
+  <p style="margin:12px 0 0;font-size:14px;"><strong>${esc(p.eventTitle)}</strong> (${esc(
+    whenIst
+  )} IST)</p>`;
+
+    const html = emailWrapper(inner);
+    const text = `Meeting cancelled (${BRAND})\n\n${p.eventTitle}\n${whenIst} IST`;
+
+    try {
+      const { error } = await resend.emails.send({
+        from: fromAddress(),
+        to: [guestEmail.trim().toLowerCase()],
+        subject: `Cancelled: ${p.eventTitle} · ${BRAND}`,
+        html,
+        text,
+      });
+      if (error) {
+        console.error("[email] guest cancel failed:", guestEmail, error.message);
+      }
+    } catch (err) {
+      console.error("[email] guest cancel failed:", guestEmail, err?.message || err);
+    }
+  }
 }
 
 /**
@@ -254,6 +422,7 @@ export async function sendBookingConfirmationEmail(p) {
  * @param {string} p.bookerName
  * @param {string} p.eventTitle
  * @param {Date|string} p.startAt
+ * @param {string[]} [p.guestEmails]
  */
 export async function sendBookingCancelledEmail(p) {
   const resend = getResend();
@@ -281,6 +450,12 @@ export async function sendBookingCancelledEmail(p) {
   if (error) {
     throw new Error(error.message || JSON.stringify(error));
   }
+
+  try {
+    await sendBookingGuestCancelledEmails(p);
+  } catch (err) {
+    console.error("[email] guest cancel batch failed:", err?.message || err);
+  }
 }
 
 /**
@@ -296,6 +471,7 @@ export async function sendBookingCancelledEmail(p) {
  * @param {string} p.eventSlug
  * @param {string} p.bookingId
  * @param {string} p.confirmationToken
+ * @param {string[]} [p.guestEmails]
  */
 export async function sendBookingRescheduledEmail(p) {
   const resend = getResend();
@@ -345,5 +521,11 @@ export async function sendBookingRescheduledEmail(p) {
 
   if (error) {
     throw new Error(error.message || JSON.stringify(error));
+  }
+
+  try {
+    await sendBookingGuestRescheduledEmails(p);
+  } catch (err) {
+    console.error("[email] guest reschedule batch failed:", err?.message || err);
   }
 }

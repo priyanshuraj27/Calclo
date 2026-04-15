@@ -4,6 +4,10 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { EventType } from "../models/eventType.models.js";
 import { AvailabilitySchedule } from "../models/availabilitySchedule.models.js";
 import { User } from "../models/user.models.js";
+import {
+  sanitizeDurationOptionsArray,
+  resolveDurationOptionsForCreate,
+} from "../utils/eventTypeDuration.util.js";
 
 const assertScheduleOwnedByHost = async (scheduleId, hostUserId) => {
   const schedule = await AvailabilitySchedule.findOne({
@@ -37,6 +41,7 @@ export const createEventType = asyncHandler(async (req, res) => {
     minimumNoticeMinutes,
     bookingWindowDays,
     bookingQuestions,
+    durationOptions,
   } = req.body;
 
   if (!title || !slug || !durationMinutes) {
@@ -74,6 +79,10 @@ export const createEventType = asyncHandler(async (req, res) => {
     minimumNoticeMinutes,
     bookingWindowDays,
     bookingQuestions: bookingQuestions ?? [],
+    durationOptions: resolveDurationOptionsForCreate(
+      durationMinutes,
+      durationOptions
+    ),
   });
 
   return res
@@ -115,6 +124,9 @@ export const updateMyEventType = asyncHandler(async (req, res) => {
   }
 
   Object.assign(doc, updates);
+  if (updates.durationOptions !== undefined) {
+    doc.durationOptions = sanitizeDurationOptionsArray(updates.durationOptions);
+  }
   await doc.save();
 
   return res.status(200).json(new ApiResponse(200, "Event type updated", doc));

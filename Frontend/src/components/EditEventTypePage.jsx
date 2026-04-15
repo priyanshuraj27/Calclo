@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Icon } from "./Icon";
 import { Switch } from "./Switch";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { apiData } from "../api/client.js";
+import { summarizeDays, summarizeTime } from "../api/scheduleMappers.js";
+import { buildDurationOptionsPayload } from "../utils/eventTypeDuration.js";
 
 // ─── Sub-Components ─────────────────────────────────────────────────────────
 
@@ -188,6 +190,7 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
   const [title, setTitle] = useState(initialTitle || "15 Min Meeting");
   const [slug, setSlug] = useState(title.toLowerCase().replace(/ /g, "-"));
   const [duration, setDuration] = useState(15);
+  const [durationOptionsText, setDurationOptionsText] = useState("");
   const [description, setDescription] = useState("");
   const [activeTab, setActiveTab] = useState("basics");
   const [enabled, setEnabled] = useState(true);
@@ -205,7 +208,9 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
   const [locationPasscode, setLocationPasscode] = useState("");
   const [locationAdvancedOpen, setLocationAdvancedOpen] = useState(false);
   const [extraLocations, setExtraLocations] = useState([]);
-  
+  const [schedules, setSchedules] = useState([]);
+  const [availabilityScheduleId, setAvailabilityScheduleId] = useState("");
+
   const [parent] = useAutoAnimate();
 
   const resetPrimaryLocation = () => {
@@ -224,10 +229,44 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    apiData("/api/v1/schedules")
+      .then((rows) => {
+        if (!cancelled) setSchedules(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setSchedules([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!schedules.length || isMongoId(eventTypeId)) return;
+    setAvailabilityScheduleId((prev) => {
+      if (prev) return prev;
+      const def = schedules.find((s) => s.isDefault) || schedules[0];
+      return def?._id ? String(def._id) : "";
+    });
+  }, [schedules, eventTypeId]);
+
+  useEffect(() => {
+    if (!schedules.length || !availabilityScheduleId) return;
+    const ok = schedules.some(
+      (s) => String(s._id) === String(availabilityScheduleId)
+    );
+    if (ok) return;
+    const def = schedules.find((s) => s.isDefault) || schedules[0];
+    if (def?._id) setAvailabilityScheduleId(String(def._id));
+  }, [schedules, availabilityScheduleId]);
+
+  useEffect(() => {
     if (!isMongoId(eventTypeId)) {
       skipPersist.current = false;
       return;
     }
+    skipPersist.current = true;
     let cancelled = false;
     (async () => {
       try {
@@ -236,8 +275,20 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
         setTitle(doc.title || "");
         setSlug(doc.slug || "");
         setDuration(Number(doc.durationMinutes) || 15);
+        const baseM = Number(doc.durationMinutes) || 15;
+        const opts = Array.isArray(doc.durationOptions)
+          ? doc.durationOptions.map(Number).filter((n) => Number.isFinite(n))
+          : [];
+        const extras = opts.filter((n) => n !== baseM);
+        setDurationOptionsText(extras.join(", "));
         setDescription(doc.description || "");
         setEnabled(!doc.hidden);
+        const schedRef = doc.availabilityScheduleId;
+        const sid =
+          schedRef && typeof schedRef === "object"
+            ? schedRef._id
+            : doc.availabilityScheduleId;
+        if (sid) setAvailabilityScheduleId(String(sid));
         queueMicrotask(() => {
           skipPersist.current = false;
         });
@@ -254,19 +305,33 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
     if (!isMongoId(eventTypeId)) return;
     if (skipPersist.current) return;
     const t = setTimeout(() => {
+      const patch = {
+        title,
+        slug,
+        durationMinutes: Number(duration) || 15,
+        description,
+        hidden: !enabled,
+        durationOptions: buildDurationOptionsPayload(duration, durationOptionsText),
+      };
+      if (isMongoId(availabilityScheduleId)) {
+        patch.availabilityScheduleId = availabilityScheduleId;
+      }
       apiData(`/api/v1/event-types/${eventTypeId}`, {
         method: "PATCH",
-        json: {
-          title,
-          slug,
-          durationMinutes: Number(duration) || 15,
-          description,
-          hidden: !enabled,
-        },
+        json: patch,
       }).catch(() => {});
     }, 700);
     return () => clearTimeout(t);
-  }, [title, slug, duration, description, enabled, eventTypeId]);
+  }, [
+    title,
+    slug,
+    duration,
+    description,
+    enabled,
+    eventTypeId,
+    availabilityScheduleId,
+    durationOptionsText,
+  ]);
 
   const persistEventType = async () => {
     const payload = {
@@ -275,16 +340,28 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
       durationMinutes: Number(duration) || 15,
       description,
       hidden: !enabled,
+      durationOptions: buildDurationOptionsPayload(duration, durationOptionsText),
     };
 
     if (!payload.title || !payload.slug) {
       throw new Error("Title and slug are required");
     }
 
+    let scheduleId = availabilityScheduleId;
+    if (!isMongoId(scheduleId)) {
+      const def = schedules.find((s) => s.isDefault) || schedules[0];
+      scheduleId = def?._id ? String(def._id) : "";
+    }
+    if (!isMongoId(scheduleId)) {
+      throw new Error(
+        "Add an availability schedule first (sidebar → Availability), then try again."
+      );
+    }
+
     if (isMongoId(eventTypeId)) {
       await apiData(`/api/v1/event-types/${eventTypeId}`, {
         method: "PATCH",
-        json: payload,
+        json: { ...payload, availabilityScheduleId: scheduleId },
       });
       return { id: eventTypeId, created: false };
     }
@@ -294,6 +371,7 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
       json: {
         ...payload,
         active: true,
+        availabilityScheduleId: scheduleId,
       },
     });
     return { id: created?._id, created: true };
@@ -328,9 +406,27 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
     }
   };
 
+  const selectedSchedule = useMemo(
+    () => schedules.find((s) => String(s._id) === String(availabilityScheduleId)),
+    [schedules, availabilityScheduleId]
+  );
+
+  const scheduleSummaryLine = useMemo(() => {
+    if (!selectedSchedule?.weeklyRules) return "";
+    const days = summarizeDays(selectedSchedule.weeklyRules);
+    const time = summarizeTime(selectedSchedule.weeklyRules);
+    if (time) return `${days} · ${time}`;
+    return days;
+  }, [selectedSchedule]);
+
   const sidebarItems = [
     { id: "basics", label: "Basics", sublabel: `${duration} mins`, icon: "link" },
-    { id: "availability", label: "Availability", sublabel: "Working hours", icon: "calendar" },
+    {
+      id: "availability",
+      label: "Availability",
+      sublabel: selectedSchedule?.name || "Weekly hours",
+      icon: "calendar",
+    },
     { id: "limits", label: "Limits", sublabel: "How often you can be booked", icon: "clock" },
     { id: "advanced", label: "Advanced", sublabel: "Calendar settings & more...", icon: "layers" },
     { id: "recurring", label: "Recurring", sublabel: "Set up a repeating schedule", icon: "refresh-cw" },
@@ -338,15 +434,6 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
     { id: "workflows", label: "Workflows", sublabel: "0 active", icon: "zap" },
     { id: "webhooks", label: "Webhooks", sublabel: "0 active", icon: "webhook" },
   ];
-
-  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const [availability, setAvailability] = useState({
-    Monday: [{ from: "09:00", to: "17:00" }],
-    Tuesday: [{ from: "09:00", to: "17:00" }],
-    Wednesday: [{ from: "09:00", to: "17:00" }],
-    Thursday: [{ from: "09:00", to: "17:00" }],
-    Friday: [{ from: "09:00", to: "17:00" }],
-  });
 
   return (
     <div className="flex flex-col h-full -m-2 sm:-m-4 lg:-m-6 bg-default text-default overflow-hidden">
@@ -502,12 +589,23 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
                     onChange={(v) => setDuration(Number(v) || 0)}
                     suffix="Minutes"
                   />
-                  <SettingsToggle 
-                    title="Allow multiple durations" 
-                    description="Allow bookers to choose between multiple durations for this event type."
-                    checked={false}
-                    onChange={() => {}}
-                  />
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-emphasis block">
+                      Extra lengths bookers can choose (minutes)
+                    </label>
+                    <input
+                      type="text"
+                      value={durationOptionsText}
+                      onChange={(e) => setDurationOptionsText(e.target.value)}
+                      placeholder="e.g. 30, 45, 60"
+                      className="w-full bg-transparent border border-subtle rounded-lg px-4 py-2 text-sm focus:ring-1 focus:ring-emphasis focus:border-emphasis outline-none transition-all placeholder:text-muted"
+                    />
+                    <p className="text-xs text-subtle leading-relaxed">
+                      Optional. The default length is the field above; add comma-separated values so
+                      guests can pick a different meeting length when booking. Leave empty for a
+                      single fixed length.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="pt-6 border-t border-subtle space-y-6">
@@ -733,54 +831,92 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
             {/* ── Availability Tab ────────────────────────────── */}
             {activeTab === "availability" && (
               <div className="space-y-8 animate-in fade-in slide-in-from-right-1">
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <SectionHeader title="Availability" />
-                  <div className="flex items-center gap-3 p-3 bg-default border border-subtle rounded-lg focus-within:border-emphasis transition shadow-sm">
-                    <Icon name="calendar" className="h-4 w-4 text-subtle" />
-                    <select className="flex-1 bg-transparent outline-none text-sm font-medium text-emphasis cursor-pointer">
-                      <option>Working Hours (Default)</option>
-                      <option>Weekend Warm-up</option>
-                    </select>
+                  <p className="text-sm text-subtle leading-relaxed max-w-xl">
+                    Public booking slots use the <strong className="text-emphasis">weekly days and hours</strong>{" "}
+                    from the schedule you attach here, in that schedule&apos;s{" "}
+                    <strong className="text-emphasis">timezone</strong>. Edit the schedule itself from{" "}
+                    <strong className="text-emphasis">Availability</strong> in the sidebar.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="text-sm font-semibold text-emphasis block">
+                    Schedule for this event type
+                  </label>
+                  {schedules.length === 0 ? (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-emphasis">
+                      No schedules yet. Create one under{" "}
+                      <button
+                        type="button"
+                        className="font-bold underline underline-offset-2"
+                        onClick={() => onNavigate("/availability/new")}
+                      >
+                        Availability → New
+                      </button>
+                      .
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 rounded-lg border border-subtle bg-default p-3 shadow-sm focus-within:border-emphasis transition">
+                      <Icon name="calendar" className="h-4 w-4 shrink-0 text-subtle" />
+                      <select
+                        className="min-w-0 flex-1 cursor-pointer bg-transparent text-sm font-medium text-emphasis outline-none"
+                        value={availabilityScheduleId}
+                        onChange={(e) => setAvailabilityScheduleId(e.target.value)}
+                        aria-label="Availability schedule"
+                      >
+                        {schedules.map((s) => (
+                          <option key={s._id} value={s._id}>
+                            {s.name}
+                            {s.isDefault ? " (default)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {selectedSchedule ? (
+                  <div className="rounded-xl border border-subtle bg-default p-6 space-y-3 shadow-sm">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="font-bold text-emphasis">{selectedSchedule.name}</span>
+                      {selectedSchedule.isDefault ? (
+                        <span className="rounded-md bg-subtle px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-subtle">
+                          Default schedule
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-subtle">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Icon name="clock" className="h-4 w-4" />
+                        {scheduleSummaryLine || "No hours set"}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Icon name="globe" className="h-4 w-4" />
+                        {selectedSchedule.timezone || "UTC"}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      <button
+                        type="button"
+                        className="btn-primary px-4 py-2 text-sm"
+                        onClick={() =>
+                          onNavigate(`/availability/${selectedSchedule._id}`)
+                        }
+                      >
+                        Edit days &amp; hours
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary px-4 py-2 text-sm"
+                        onClick={() => onNavigate("/availability")}
+                      >
+                        All schedules
+                      </button>
+                    </div>
                   </div>
-                </div>
-
-                <div className="bg-default border border-subtle rounded-xl overflow-hidden shadow-sm divide-y divide-subtle">
-                   {days.map(day => {
-                     const isAvailable = availability[day] && availability[day].length > 0;
-                     return (
-                        <div key={day} className="flex items-start lg:items-center p-4 hover:bg-muted/10 transition group gap-6">
-                           <div className="w-40 flex items-center gap-3">
-                              <Switch checked={isAvailable} onChange={() => {}} />
-                              <span className={`text-sm font-bold ${isAvailable ? 'text-emphasis' : 'text-subtle'}`}>{day}</span>
-                           </div>
-                           <div className="flex-1 flex flex-col sm:flex-row gap-3">
-                              {isAvailable ? (
-                                <div className="flex items-center gap-2">
-                                   <div className="flex items-center gap-2 bg-subtle px-3 py-1.5 rounded-lg border border-subtle group-hover:border-emphasis transition text-sm">
-                                      <span className="font-medium">09:00</span>
-                                      <span className="text-muted">–</span>
-                                      <span className="font-medium">17:00</span>
-                                   </div>
-                                   <button className="p-2 hover:bg-subtle rounded-lg text-subtle transition opacity-0 group-hover:opacity-100">
-                                      <Icon name="plus" className="h-4 w-4" />
-                                   </button>
-                                </div>
-                              ) : (
-                                <span className="text-sm text-subtle italic py-1.5 underline underline-offset-4 decoration-subtle/30">Unavailable</span>
-                              )}
-                           </div>
-                        </div>
-                     );
-                   })}
-                </div>
-
-                <div className="flex items-center justify-between text-xs text-subtle pt-2">
-                   <div className="flex items-center gap-1.5">
-                      <Icon name="globe" className="h-3.5 w-3.5" />
-                      <span>Asia/Kolkata (GMT +5:30)</span>
-                   </div>
-                   <button onClick={() => onNavigate('/availability')} className="font-semibold text-emphasis hover:underline">Edit availability</button>
-                </div>
+                ) : null}
               </div>
             )}
 

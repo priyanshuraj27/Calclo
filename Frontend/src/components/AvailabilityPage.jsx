@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Icon } from "./Icon";
 import { Switch } from "./Switch";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
@@ -10,6 +10,27 @@ import {
 } from "../api/scheduleMappers.js";
 
 const isMongoId = (id) => /^[a-f\d]{24}$/i.test(id || "");
+
+/** IANA zones for schedule timezone (booking engine uses this with weekly hours). */
+const SCHEDULE_TIMEZONES = [
+  "UTC",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Sao_Paulo",
+  "Asia/Kolkata",
+  "Asia/Dubai",
+  "Asia/Singapore",
+  "Asia/Hong_Kong",
+  "Asia/Tokyo",
+  "Asia/Seoul",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+];
 
 /**
  * Pixel-perfect replica of the Cal.com Schedule Editor page based on the provided screenshot.
@@ -31,12 +52,17 @@ export function AvailabilityPage({ onNavigate, scheduleId }) {
     "Friday",
     "Saturday",
   ];
-  const [availability, setAvailability] = useState({
-    Monday: [{ from: "9:00am", to: "5:00pm" }],
-    Tuesday: [{ from: "9:00am", to: "5:00pm" }],
-    Wednesday: [{ from: "9:00am", to: "5:00pm" }],
-    Thursday: [{ from: "9:00am", to: "5:00pm" }],
-    Friday: [{ from: "9:00am", to: "5:00pm" }],
+  const [availability, setAvailability] = useState(() => {
+    const row = [{ from: "9:00am", to: "5:00pm" }];
+    return {
+      Sunday: null,
+      Monday: [...row],
+      Tuesday: [...row],
+      Wednesday: [...row],
+      Thursday: [...row],
+      Friday: [...row],
+      Saturday: null,
+    };
   });
 
   const recomputeSubtitle = useCallback((av) => {
@@ -46,6 +72,13 @@ export function AvailabilityPage({ onNavigate, scheduleId }) {
       setSubtitle("Mon - Fri, 9:00 AM - 5:00 PM");
     }
   }, []);
+
+  const timezoneOptions = useMemo(() => {
+    if (!timezone || SCHEDULE_TIMEZONES.includes(timezone)) {
+      return SCHEDULE_TIMEZONES;
+    }
+    return [timezone, ...SCHEDULE_TIMEZONES];
+  }, [timezone]);
 
   useEffect(() => {
     recomputeSubtitle(availability);
@@ -203,7 +236,7 @@ export function AvailabilityPage({ onNavigate, scheduleId }) {
       </div>
 
       <main className="flex-1 overflow-y-auto px-4 sm:px-8 pb-12">
-        <div className="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-12">
+        <div className="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-[1fr_minmax(260px,320px)] gap-12 lg:items-start">
           
           <div className="space-y-10">
             <div className="bg-default border border-subtle rounded-xl p-4 shadow-sm" ref={parent}>
@@ -268,25 +301,34 @@ export function AvailabilityPage({ onNavigate, scheduleId }) {
             </div>
           </div>
 
-          <div className="space-y-10">
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-emphasis">Timezone</h3>
+          <div className="space-y-10 lg:sticky lg:top-28 lg:self-start">
+            <div className="space-y-4 rounded-xl border border-subtle bg-default p-5 shadow-sm">
+              <h3 className="text-sm font-bold text-emphasis">Schedule timezone</h3>
+              <p className="text-xs text-subtle leading-relaxed">
+                Your weekly hours are interpreted in this timezone. It stays visible here while you
+                edit days and times.
+              </p>
               <div className="relative group">
-                <select 
+                <select
                   className="w-full appearance-none bg-default border border-subtle rounded-lg px-4 py-2.5 text-sm font-medium text-emphasis focus:ring-1 focus:ring-emphasis outline-none cursor-pointer transition"
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
                 >
-                  <option value="Europe/London">Europe/London</option>
-                  <option value="Asia/Kolkata">Asia/Kolkata</option>
-                  <option value="America/New_York">America/New_York</option>
+                  {timezoneOptions.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz}
+                    </option>
+                  ))}
                 </select>
-                <Icon name="chevron-down" className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle pointer-events-none" />
+                <Icon
+                  name="chevron-down"
+                  className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle pointer-events-none"
+                />
               </div>
             </div>
 
             <div className="bg-default border border-subtle rounded-xl p-6 space-y-4">
-               <h3 className="text-sm font-bold text-emphasis">Something doesn't look right?</h3>
+               <h3 className="text-sm font-bold text-emphasis">Something doesn&apos;t look right?</h3>
                <button type="button" className="w-full px-4 py-2 border border-subtle rounded-lg text-sm font-bold text-emphasis hover:bg-subtle transition">
                   Launch troubleshooter
                </button>

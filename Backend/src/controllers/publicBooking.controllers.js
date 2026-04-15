@@ -18,6 +18,11 @@ import {
   sendBookingRescheduledEmail,
 } from "../services/email.service.js";
 import { normalizeMeetingWhere } from "../utils/meetingWhere.util.js";
+import {
+  resolveAllowedDurationMinutes,
+  resolveDurationMinutesForRequest,
+} from "../utils/eventTypeDuration.util.js";
+import { sanitizeGuestEmails } from "../utils/guestEmails.util.js";
 
 const hashToken = (raw) =>
   crypto.createHash("sha256").update(raw, "utf8").digest("hex");
@@ -40,6 +45,7 @@ export const getPublicEvent = asyncHandler(async (req, res) => {
     title: eventType.title,
     description: eventType.description,
     durationMinutes: eventType.durationMinutes,
+    durationOptions: resolveAllowedDurationMinutes(eventType),
     slug: eventType.slug,
     host: {
       username: host.username,
@@ -60,6 +66,7 @@ export const getPublicSlots = asyncHandler(async (req, res) => {
     hostUsername,
     eventSlug,
     date,
+    durationMinutes: req.query.durationMinutes,
   });
   if (result.notFound) throw new ApiError(404, "Event not found");
   if (result.invalidDate) throw new ApiError(400, "Invalid date");
@@ -87,9 +94,20 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
   );
   if (!host || !eventType) throw new ApiError(404, "Event not found");
 
+  const guestEmails = sanitizeGuestEmails(req.body.guestEmails, {
+    excludeEmails: [String(bookerEmail || "").trim(), host?.email].filter(
+      Boolean
+    ),
+  });
+
+  const bookingDurationMinutes = resolveDurationMinutesForRequest(
+    eventType,
+    req.body.durationMinutes
+  );
+
   const start = new Date(startAt);
   const end = new Date(
-    start.getTime() + eventType.durationMinutes * 60 * 1000
+    start.getTime() + bookingDurationMinutes * 60 * 1000
   );
   const blockedStart = new Date(
     start.getTime() - eventType.bufferBeforeMinutes * 60 * 1000
@@ -138,6 +156,7 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
             notes: notes ?? "",
             meetingWhereType,
             meetingWhereDetail,
+            guestEmails,
           },
         ],
         { session }
@@ -187,6 +206,7 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
       confirmationToken: rawToken,
       meetingWhereType: populated.meetingWhereType,
       meetingWhereDetail: populated.meetingWhereDetail,
+      guestEmails: populated.guestEmails || [],
     })
   );
 
@@ -240,6 +260,7 @@ export const cancelPublicBooking = asyncHandler(async (req, res) => {
 
   const booking = await Booking.findById(bookingId);
   if (!booking) throw new ApiError(404, "Booking not found");
+  const guestEmailsForNotify = [...(booking.guestEmails || [])];
   if (booking.status === BOOKING_STATUS.CANCELLED) {
     return res
       .status(200)
@@ -265,6 +286,7 @@ export const cancelPublicBooking = asyncHandler(async (req, res) => {
         bookerName: populatedForEmail.bookerName,
         eventTitle: populatedForEmail.eventTypeId?.title || "Meeting",
         startAt: populatedForEmail.startAt,
+        guestEmails: guestEmailsForNotify,
       })
     );
   }
@@ -317,9 +339,13 @@ export const reschedulePublicBooking = asyncHandler(async (req, res) => {
     normalizeMeetingWhere(whereInput);
 
   const start = new Date(newStartAt);
-  const end = new Date(
-    start.getTime() + eventType.durationMinutes * 60 * 1000
+  const prevDurationMinutes = Math.max(
+    1,
+    Math.round(
+      (booking.endAt.getTime() - booking.startAt.getTime()) / (60 * 1000)
+    )
   );
+  const end = new Date(start.getTime() + prevDurationMinutes * 60 * 1000);
   const blockedStart = new Date(
     start.getTime() - eventType.bufferBeforeMinutes * 60 * 1000
   );
@@ -374,6 +400,7 @@ export const reschedulePublicBooking = asyncHandler(async (req, res) => {
             rescheduledFromBookingId: booking._id,
             meetingWhereType,
             meetingWhereDetail,
+            guestEmails: [...(booking.guestEmails || [])],
           },
         ],
         { session }
@@ -426,6 +453,7 @@ export const reschedulePublicBooking = asyncHandler(async (req, res) => {
       confirmationToken: rawToken,
       meetingWhereType: populated.meetingWhereType,
       meetingWhereDetail: populated.meetingWhereDetail,
+      guestEmails: populated.guestEmails || [],
     })
   );
 

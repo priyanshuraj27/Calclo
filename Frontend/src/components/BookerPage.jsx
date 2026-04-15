@@ -147,9 +147,15 @@ function buildAckFromApi(apiPayload, event, tz, meta) {
     eventSlug: meta?.eventSlug ?? "",
   });
   const w = resolveBookingWhereParts(mType, mDetail, pageHref);
+  const actualMinutes = Math.max(
+    1,
+    Math.round(
+      (new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60000
+    )
+  );
   return {
     eventTitle: et.title || event.title,
-    durationMinutes: et.durationMinutes ?? event.duration,
+    durationMinutes: actualMinutes,
     hostName: host.fullName || host.username || event.user.name,
     hostEmail: host.email || "",
     guestName: b.bookerName,
@@ -164,6 +170,7 @@ function buildAckFromApi(apiPayload, event, tz, meta) {
     confirmationToken: apiPayload.confirmationToken,
     hostUsername: meta?.hostUsername ?? "",
     eventSlug: meta?.eventSlug ?? "",
+    guestEmails: Array.isArray(b.guestEmails) ? b.guestEmails : [],
   };
 }
 
@@ -288,6 +295,7 @@ function DetailRow({ label, children }) {
 function BookingAcknowledgement({
   ack,
   onHome,
+  onBookAnother,
   onReschedule,
   onCancel,
   cancelBusy,
@@ -359,6 +367,25 @@ function BookingAcknowledgement({
                   {ack.guestEmail}
                 </a>
               </div>
+              {ack.guestEmails && ack.guestEmails.length > 0 ? (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    Additional guests notified
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm text-zinc-700 dark:text-zinc-200">
+                    {ack.guestEmails.map((em) => (
+                      <li key={em}>
+                        <a
+                          href={`mailto:${em}`}
+                          className="text-blue-600 underline underline-offset-2 dark:text-blue-400"
+                        >
+                          {em}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           </DetailRow>
           <DetailRow label="Where">
@@ -465,11 +492,20 @@ function BookingAcknowledgement({
           </div>
         </div>
 
-        <div className="mt-8 flex justify-center">
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          {typeof onBookAnother === "function" ? (
+            <button
+              type="button"
+              onClick={onBookAnother}
+              className="w-full rounded-lg bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-800 sm:w-auto dark:bg-[#fafafa] dark:text-[#0a0a0a] dark:hover:bg-white"
+            >
+              Book another time
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onHome}
-            className="rounded-lg border border-zinc-200 bg-white px-6 py-2.5 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50 dark:border-[#333] dark:bg-transparent dark:text-[#e5e5e5] dark:hover:bg-[#1f1f1f]"
+            className="w-full rounded-lg border border-zinc-200 bg-white px-6 py-2.5 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50 sm:w-auto dark:border-[#333] dark:bg-transparent dark:text-[#e5e5e5] dark:hover:bg-[#1f1f1f]"
           >
             Back to home
           </button>
@@ -507,13 +543,16 @@ export function BookerPage({
       initial: "h",
     },
     duration: 15,
+    durationOptions: [15],
     description: "Welcome to my scheduling page. Please select a time that works for you.",
   });
+  const [bookingDuration, setBookingDuration] = useState(15);
   const [bookerName, setBookerName] = useState("");
   const [bookerEmail, setBookerEmail] = useState("");
   const [meetingWhereType, setMeetingWhereType] = useState("cal-video");
   const [meetingWhereDetail, setMeetingWhereDetail] = useState("");
   const [notes, setNotes] = useState("");
+  const [guestEmailsInput, setGuestEmailsInput] = useState("");
   const [error, setError] = useState(null);
   const [ackDetails, setAckDetails] = useState(null);
   const [rescheduleCtx, setRescheduleCtx] = useState(null);
@@ -544,12 +583,19 @@ export function BookerPage({
       const avatar =
         data.host?.avatar ||
         `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=16a34a&color=fff`;
+      const base = Number(data.durationMinutes) || 15;
+      const rawOpts = Array.isArray(data.durationOptions)
+        ? data.durationOptions.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 1)
+        : [];
+      const durationOptions = [...new Set([base, ...rawOpts])].sort((a, b) => a - b);
       setEvent({
         title: data.title,
         user: { name, avatar, initial },
-        duration: data.durationMinutes,
+        duration: base,
+        durationOptions,
         description: data.description || "",
       });
+      setBookingDuration(base);
     } catch (e) {
       setError(e.message || "Failed to load event");
     }
@@ -597,6 +643,14 @@ export function BookerPage({
         setBookerEmail(b.bookerEmail || "");
         setMeetingWhereType(b.meetingWhereType || "cal-video");
         setMeetingWhereDetail(b.meetingWhereDetail || "");
+        const prevMin = Math.max(
+          1,
+          Math.round(
+            (new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) /
+              60000
+          )
+        );
+        setBookingDuration(prevMin);
         const d = new Date(b.startAt);
         const y = d.getFullYear();
         const m0 = d.getMonth();
@@ -616,8 +670,12 @@ export function BookerPage({
         setSelectedTime(null);
         setSelectedSlotStartAt(null);
         setPhase("schedule");
+        const slotQ = new URLSearchParams({
+          date: ymd,
+          durationMinutes: String(prevMin),
+        });
         const slotsData = await apiData(
-          `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}/slots?date=${encodeURIComponent(ymd)}`
+          `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}/slots?${slotQ.toString()}`
         );
         if (cancelled) return;
         const slots = slotsData?.slots || [];
@@ -640,26 +698,50 @@ export function BookerPage({
     };
   }, [navSearch, hostUsername, eventSlug]);
 
-  const loadSlots = async (ymd) => {
-    setSlotsLoading(true);
-    try {
-      const data = await apiData(
-        `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}/slots?date=${encodeURIComponent(ymd)}`
-      );
-      const slots = data?.slots || [];
-      setTimeSlots(
-        slots.map((s) => ({
-          label: s.label,
-          startAt: s.startAt,
-        }))
-      );
-    } catch (e) {
-      setTimeSlots([]);
-      setError(e.message || "Failed to load slots");
-    } finally {
-      setSlotsLoading(false);
-    }
-  };
+  const loadSlots = useCallback(
+    async (ymd, explicitMinutes) => {
+      const durationMinutes =
+        explicitMinutes != null ? Number(explicitMinutes) : bookingDuration;
+      setSlotsLoading(true);
+      try {
+        const q = new URLSearchParams({
+          date: ymd,
+          durationMinutes: String(durationMinutes),
+        });
+        const data = await apiData(
+          `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}/slots?${q.toString()}`
+        );
+        const slots = data?.slots || [];
+        setTimeSlots(
+          slots.map((s) => ({
+            label: s.label,
+            startAt: s.startAt,
+          }))
+        );
+      } catch (e) {
+        setTimeSlots([]);
+        setError(e.message || "Failed to load slots");
+      } finally {
+        setSlotsLoading(false);
+      }
+    },
+    [hostUsername, eventSlug, bookingDuration]
+  );
+
+  const handleBookingDurationChange = useCallback(
+    (next) => {
+      const v = Number(next);
+      if (!Number.isFinite(v)) return;
+      setBookingDuration(v);
+      setSelectedTime(null);
+      setSelectedSlotStartAt(null);
+      setPhase((p) => (p === "form" ? "schedule" : p));
+      if (selectedYmd) {
+        void loadSlots(selectedYmd, v);
+      }
+    },
+    [selectedYmd, loadSlots]
+  );
 
   const goPrevMonth = () => {
     const d = new Date(viewYear, viewMonth0 - 1, 1);
@@ -773,6 +855,28 @@ export function BookerPage({
     }
   }, [ackDetails, onNavigate]);
 
+  const handleBookAnother = useCallback(() => {
+    setAckDetails(null);
+    setPhase("schedule");
+    setSelectedTime(null);
+    setSelectedSlotStartAt(null);
+    setError(null);
+    setTimeSlots([]);
+    if (selectedYmd) {
+      void loadSlots(selectedYmd);
+    }
+  }, [selectedYmd, loadSlots]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      if (phase !== "schedule" || !selectedYmd) return;
+      void loadSlots(selectedYmd);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [phase, selectedYmd, loadSlots]);
+
   if (phase === "success" && ackDetails) {
     return (
       <div className="min-h-screen bg-zinc-100 text-zinc-900 selection:bg-zinc-900/10 dark:bg-[#0a0a0a] dark:text-[#fafafa] dark:selection:bg-white/20 flex flex-col items-center justify-center p-4 md:p-6 font-sans">
@@ -782,6 +886,7 @@ export function BookerPage({
         <BookingAcknowledgement
           ack={ackDetails}
           onHome={() => onNavigate("/event-types")}
+          onBookAnother={handleBookAnother}
           onReschedule={handleRescheduleFromAck}
           onCancel={handleCancelFromAck}
           cancelBusy={cancelAckBusy}
@@ -858,8 +963,30 @@ export function BookerPage({
           <div className="space-y-3 text-[13px]">
             <div className="flex items-center gap-2.5 text-[#a3a3a3]">
               <Icon name="clock" className="h-4 w-4 shrink-0 opacity-80" />
-              <span>{event.duration}m</span>
-                 </div>
+              {!rescheduleCtx &&
+              event.durationOptions &&
+              event.durationOptions.length > 1 ? (
+                <div className="relative min-w-0 flex-1 max-w-[200px]">
+                  <select
+                    className="w-full cursor-pointer rounded-lg border border-[#333] bg-[#141414] px-2 py-1.5 text-[13px] font-medium text-[#e5e5e5] outline-none appearance-none"
+                    style={{ colorScheme: "dark" }}
+                    value={bookingDuration}
+                    onChange={(e) =>
+                      handleBookingDurationChange(Number(e.target.value))
+                    }
+                    aria-label="Meeting length"
+                  >
+                    {event.durationOptions.map((m) => (
+                      <option key={m} value={m} className="bg-[#141414]">
+                        {m} min
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <span>{bookingDuration}m</span>
+              )}
+            </div>
             <div className="flex items-center gap-2.5 text-[#a3a3a3]">
               <Icon name="video" className="h-4 w-4 shrink-0 opacity-80" />
               <span className="min-w-0 leading-snug">{meetingWhereSummary}</span>
@@ -887,6 +1014,14 @@ export function BookerPage({
               </div>
             </div>
           </div>
+
+          {!rescheduleCtx &&
+          event.durationOptions &&
+          event.durationOptions.length === 1 ? (
+            <p className="text-[12px] text-[#666] leading-snug">
+              Only {bookingDuration}-minute meetings are available for this link.
+            </p>
+          ) : null}
 
           {event.description ? (
             <p className="text-[13px] text-[#737373] leading-relaxed whitespace-pre-wrap">
@@ -1008,6 +1143,33 @@ export function BookerPage({
                  </div>
               </div>
 
+                    {!rescheduleCtx &&
+                    event.durationOptions &&
+                    event.durationOptions.length > 1 ? (
+                      <div className="mb-4 flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wide text-[#737373]">
+                          Length
+                        </span>
+                        <select
+                          className="min-w-[120px] flex-1 cursor-pointer rounded-lg border border-[#333] bg-[#141414] px-2.5 py-2 text-[13px] font-medium text-[#e5e5e5] outline-none appearance-none"
+                          style={{ colorScheme: "dark" }}
+                          value={bookingDuration}
+                          onChange={(e) =>
+                            handleBookingDurationChange(
+                              Number(e.target.value)
+                            )
+                          }
+                          aria-label="Meeting length"
+                        >
+                          {event.durationOptions.map((m) => (
+                            <option key={m} value={m} className="bg-[#141414]">
+                              {m} min
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+
                     <div className="flex flex-col gap-2 overflow-y-auto max-h-[min(420px,calc(100vh-220px))] pr-1 custom-scrollbar">
                       {slotsLoading ? (
                         <p className="text-sm text-[#737373]">Loading times…</p>
@@ -1048,9 +1210,37 @@ export function BookerPage({
                 <h3 className="text-lg font-semibold text-[#fafafa] mb-1">
                   {rescheduleCtx ? "Confirm new time" : "Enter details"}
                 </h3>
-                <p className="text-xs text-[#737373] mb-6">
+                <p className="text-xs text-[#737373] mb-4">
                   {selectedDateLabel} · {selectedTime}
                 </p>
+                {!rescheduleCtx &&
+                event.durationOptions &&
+                event.durationOptions.length > 1 ? (
+                  <div className="mb-6 flex flex-wrap items-center gap-2">
+                    <label
+                      htmlFor="booker-duration-form"
+                      className="text-[11px] font-bold uppercase tracking-wide text-[#737373]"
+                    >
+                      Length
+                    </label>
+                    <select
+                      id="booker-duration-form"
+                      className="min-w-[120px] flex-1 cursor-pointer rounded-lg border border-[#333] bg-[#141414] px-2.5 py-2 text-[13px] font-medium text-[#e5e5e5] outline-none appearance-none"
+                      style={{ colorScheme: "dark" }}
+                      value={bookingDuration}
+                      onChange={(e) =>
+                        handleBookingDurationChange(Number(e.target.value))
+                      }
+                      aria-label="Meeting length"
+                    >
+                      {event.durationOptions.map((m) => (
+                        <option key={m} value={m} className="bg-[#141414]">
+                          {m} min
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
                 <form
                   className="space-y-4 flex-1 flex flex-col min-h-0 overflow-y-auto"
                   onSubmit={async (e) => {
@@ -1096,10 +1286,15 @@ export function BookerPage({
                             method: "POST",
                             json: {
                               startAt: selectedSlotStartAt,
+                              durationMinutes: bookingDuration,
                               bookerName,
                               bookerEmail,
                               answers: [],
                               notes,
+                              guestEmails: String(guestEmailsInput || "")
+                                .split(/[\n,;]+/)
+                                .map((s) => s.trim())
+                                .filter(Boolean),
                               ...wherePayload,
                             },
                           }
@@ -1201,6 +1396,29 @@ export function BookerPage({
                             Optional. If empty, guests use your calclo.com booking link.
                           </p>
                         ) : null}
+                      </div>
+                    ) : null}
+                    {!rescheduleCtx ? (
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold uppercase tracking-wide text-[#737373]">
+                          Additional guests (optional)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={guestEmailsInput}
+                          onChange={(e) => setGuestEmailsInput(e.target.value)}
+                          placeholder="One email per line, or comma-separated (max 10)"
+                          className="w-full resize-none rounded-lg border border-[#333] bg-[#141414] px-3 py-2.5 text-sm text-[#fafafa] outline-none placeholder:text-[#525252] focus:border-[#525252]"
+                          aria-describedby="guest-emails-hint"
+                        />
+                        <p
+                          id="guest-emails-hint"
+                          className="text-[11px] text-[#525252] leading-snug"
+                        >
+                          Each address gets an invite with time, location, and a
+                          calendar file. They cannot reschedule or cancel this
+                          booking (only you can, with your confirmation link).
+                        </p>
                       </div>
                     ) : null}
                     <div className="space-y-1.5">

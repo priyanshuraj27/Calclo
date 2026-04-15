@@ -7,6 +7,7 @@ export function CreateEventTypeModal({ isOpen, onClose, onContinue, profileSlug 
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [duration, setDuration] = useState(15);
+  const [durationExtras, setDurationExtras] = useState("");
   const [parent] = useAutoAnimate();
 
   if (!isOpen) return null;
@@ -24,7 +25,7 @@ export function CreateEventTypeModal({ isOpen, onClose, onContinue, profileSlug 
 
   const handleContinue = (e) => {
     e.preventDefault();
-    onContinue({ title, slug, description, duration });
+    onContinue({ title, slug, description, duration, durationExtras });
   };
 
   return (
@@ -123,6 +124,27 @@ export function CreateEventTypeModal({ isOpen, onClose, onContinue, profileSlug 
                   minutes
                 </div>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-emphasis block">
+                Extra lengths (optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 30, 45"
+                className="w-full bg-default border border-subtle rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black/5 focus:border-emphasis outline-none transition-all placeholder:text-muted"
+                value={durationExtras}
+                onChange={(e) => setDurationExtras(e.target.value)}
+                aria-describedby="duration-extras-hint"
+              />
+              <p
+                id="duration-extras-hint"
+                className="text-xs text-subtle leading-relaxed"
+              >
+                Comma-separated minutes in addition to the duration above (1–720).
+                When set, bookers can choose among these lengths when booking.
+              </p>
             </div>
           </div>
 

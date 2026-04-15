@@ -22,11 +22,11 @@ export function Navigation({ activePath, onNavigate }) {
   }, [activePath]);
 
   const handleNavClick = (itemHref, itemLabel) => {
-    if (activePath.startsWith(itemHref)) {
-      // We are already on this path. Toggle the group collapse manually
-      setCollapsedStates(prev => ({
+    const hasChildren = itemLabel === "Apps" || itemLabel === "Insights";
+    if (hasChildren && activePath.startsWith(itemHref)) {
+      setCollapsedStates((prev) => ({
         ...prev,
-        [itemLabel]: !prev[itemLabel]
+        [itemLabel]: !prev[itemLabel],
       }));
     } else {
       onNavigate(itemHref);

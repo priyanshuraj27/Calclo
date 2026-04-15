@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Icon } from "./Icon";
 import { Switch } from "./Switch";
 import { ActionsDropdown } from "./ActionsDropdown";
@@ -21,6 +21,26 @@ import { ActionsDropdown } from "./ActionsDropdown";
 export function EventTypeCard({ type, profile, onAction }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [enabled, setEnabled] = useState(!type.hidden);
+  const actionsRef = useRef(null);
+
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+    let cleanup = () => {};
+    const timer = window.setTimeout(() => {
+      const onPointerDown = (e) => {
+        if (actionsRef.current && !actionsRef.current.contains(e.target)) {
+          setIsDropdownOpen(false);
+        }
+      };
+      document.addEventListener("pointerdown", onPointerDown, true);
+      cleanup = () =>
+        document.removeEventListener("pointerdown", onPointerDown, true);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      cleanup();
+    };
+  }, [isDropdownOpen]);
 
   return (
     <li className={`group hover:bg-subtle/20 transition-colors ${isDropdownOpen ? 'relative z-40' : ''}`}>
@@ -52,8 +72,8 @@ export function EventTypeCard({ type, profile, onAction }) {
           </div>
         </button>
 
-        {/* Actions Container */}
-        <div className="flex items-center gap-6">
+        {/* Actions Container — ref for dropdown dismiss (must not clip menu: parent uses overflow-visible) */}
+        <div ref={actionsRef} className="flex items-center gap-6 shrink-0">
            {/* Hidden Label */}
            {!enabled && (
               <span className="hidden sm:block text-[11px] font-extrabold text-[#666] uppercase tracking-widest mr-[-8px]">
@@ -69,46 +89,65 @@ export function EventTypeCard({ type, profile, onAction }) {
               />
               
               <div className="hidden sm:flex items-center gap-1">
-                 <button 
-                    className="p-2 hover:bg-subtle/50 rounded-md text-subtle transition group" 
-                    onClick={() => onAction('preview')}
+                 <button
+                    type="button"
+                    className="p-2 hover:bg-subtle/50 rounded-md text-subtle transition group"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsDropdownOpen(false);
+                      onAction("preview");
+                    }}
+                    title="Open booking page"
                  >
                     <Icon name="external-link" className="h-4 w-4" />
                  </button>
-                 <button 
-                    className="p-2 hover:bg-subtle/50 rounded-md text-subtle transition group" 
-                    onClick={() => onAction('copy-link')}
+                 <button
+                    type="button"
+                    className="p-2 hover:bg-subtle/50 rounded-md text-subtle transition group"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsDropdownOpen(false);
+                      onAction("copy-link");
+                    }}
+                    title="Copy booking link"
                  >
                     <Icon name="link" className="h-4 w-4" />
                  </button>
-                 <div className="relative">
-                    <button 
-                       className="p-2 hover:bg-subtle/50 rounded-md text-subtle transition group" 
-                       onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                    >
-                       <Icon name="ellipsis" className="h-4 w-4" />
-                    </button>
-                    <ActionsDropdown 
-                       isOpen={isDropdownOpen} 
-                       onClose={() => setIsDropdownOpen(false)} 
-                       onAction={onAction} 
-                    />
-                 </div>
               </div>
 
-              {/* Mobile Actions (ellipsis only) */}
-              <div className="sm:hidden relative">
-                 <button 
-                    className="p-2 hover:bg-subtle/50 rounded-md text-subtle transition group" 
-                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                 >
-                    <Icon name="ellipsis" className="h-4 w-4" />
-                 </button>
-                 <ActionsDropdown 
-                    isOpen={isDropdownOpen} 
-                    onClose={() => setIsDropdownOpen(false)} 
-                    onAction={onAction} 
-                 />
+              {/* One menu anchor for mobile + desktop (avoids duplicate dropdown DOM) */}
+              <div className="relative z-[60]">
+                <button
+                  type="button"
+                  className="p-2 hover:bg-subtle/50 rounded-md text-subtle transition group sm:hidden"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsDropdownOpen((o) => !o);
+                  }}
+                  aria-expanded={isDropdownOpen}
+                  aria-haspopup="menu"
+                  title="More options"
+                >
+                  <Icon name="ellipsis" className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="hidden sm:inline-flex p-2 hover:bg-subtle/50 rounded-md text-subtle transition group"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsDropdownOpen((o) => !o);
+                  }}
+                  aria-expanded={isDropdownOpen}
+                  aria-haspopup="menu"
+                  title="More options"
+                >
+                  <Icon name="ellipsis" className="h-4 w-4" />
+                </button>
+                <ActionsDropdown
+                  isOpen={isDropdownOpen}
+                  onClose={() => setIsDropdownOpen(false)}
+                  onAction={onAction}
+                />
               </div>
            </div>
         </div>

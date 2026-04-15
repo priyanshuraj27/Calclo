@@ -6,6 +6,7 @@ import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { CreateEventTypeModal } from "./CreateEventTypeModal";
 import { ConfirmationModal } from "./ConfirmationModal";
 import { apiData } from "../api/client.js";
+import { buildDurationOptionsPayload } from "../utils/eventTypeDuration.js";
 
 function mapEventTypeForCard(doc) {
   return {
@@ -13,6 +14,9 @@ function mapEventTypeForCard(doc) {
     title: doc.title,
     slug: doc.slug,
     length: doc.durationMinutes,
+    durationOptions: Array.isArray(doc.durationOptions)
+      ? doc.durationOptions
+      : [],
     description: doc.description || "",
     hidden: Boolean(doc.hidden),
     color: doc.color,
@@ -96,6 +100,10 @@ export function EventTypesPage({ onNavigate }) {
             slug,
             description: type.description || "",
             durationMinutes: type.length,
+            ...(Array.isArray(type.durationOptions) &&
+            type.durationOptions.length
+              ? { durationOptions: type.durationOptions }
+              : {}),
             hidden: type.hidden,
             active: true,
             color: type.color,
@@ -110,8 +118,21 @@ export function EventTypesPage({ onNavigate }) {
       } catch (e) {
         showToast(e.message || "Duplicate failed");
       }
-    } else if (action === "preview" || action === "copy-link") {
-      onNavigate(`/book/${profile.slug}/${encodeURIComponent(type.slug)}`);
+    } else if (action === "preview") {
+      const url = `${window.location.origin}/book/${encodeURIComponent(profile.slug)}/${encodeURIComponent(type.slug)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    } else if (action === "copy-link") {
+      const url = `${window.location.origin}/book/${encodeURIComponent(profile.slug)}/${encodeURIComponent(type.slug)}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast("Booking link copied");
+      } catch {
+        try {
+          window.prompt("Copy this link:", url);
+        } catch {
+          showToast(url);
+        }
+      }
     } else if (action === "update") {
       try {
         const hidden = !extra;
@@ -127,6 +148,8 @@ export function EventTypesPage({ onNavigate }) {
       onNavigate(
         `/event-types/${id}?title=${encodeURIComponent(type.title)}`
       );
+    } else if (action === "embed") {
+      showToast("Embed snippet is not available in this build yet.");
     }
   };
 
@@ -199,7 +222,7 @@ export function EventTypesPage({ onNavigate }) {
         </header>
       </div>
 
-      <div className="bg-default border border-[#262626] rounded-xl overflow-hidden">
+      <div className="bg-default border border-[#262626] rounded-xl overflow-visible">
         <ul ref={parent} className="divide-y divide-[#1a1a1a] w-full" data-testid="event-types">
           {filtered.length > 0 ? (
             filtered.map((type, index) => (
@@ -232,13 +255,19 @@ export function EventTypesPage({ onNavigate }) {
         profileSlug={profile.slug}
         onContinue={async (values) => {
           try {
+            const durationMinutes = Number(values.duration) || 15;
+            const durationOptions = buildDurationOptionsPayload(
+              durationMinutes,
+              values.durationExtras || ""
+            );
             const created = await apiData("/api/v1/event-types", {
               method: "POST",
               json: {
                 title: values.title,
                 slug: values.slug,
                 description: values.description || "",
-                durationMinutes: Number(values.duration) || 15,
+                durationMinutes,
+                durationOptions,
                 hidden: false,
                 active: true,
               },

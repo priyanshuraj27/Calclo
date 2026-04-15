@@ -5,6 +5,7 @@ import { User } from "../models/user.models.js";
 import { AvailabilityOverride } from "../models/availabilityOverride.models.js";
 import { BOOKING_STATUS } from "../constants/scheduling.constants.js";
 import { OVERRIDE_TYPE } from "../constants/scheduling.constants.js";
+import { resolveDurationMinutesForRequest } from "../utils/eventTypeDuration.util.js";
 
 const LUXON_WEEKDAY_TO_KEY = {
   1: "monday",
@@ -84,13 +85,30 @@ function blockedRangeForSlot(slotStartUtc, slotEndUtc, bufferBefore, bufferAfter
   return { start: start.toJSDate(), end: end.toJSDate() };
 }
 
+/** Normalize Mongoose / JSON dates for comparisons. */
+function toUtcMillis(d) {
+  if (d == null) return NaN;
+  if (typeof d === "number" && Number.isFinite(d)) return d;
+  const t = new Date(d).getTime();
+  return Number.isFinite(t) ? t : NaN;
+}
+
+/**
+ * True if [blockedStart, blockedEnd) intersects any booking's blocked window.
+ * Uses millisecond timestamps so lean()/JSON date shapes cannot skip overlaps.
+ */
 export function hasOverlap(blockedStart, blockedEnd, bookings) {
-  return bookings.some(
-    (b) =>
-      b.blockedStartAt < blockedEnd &&
-      b.blockedEndAt > blockedStart &&
-      [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE].includes(b.status)
-  );
+  const bs = toUtcMillis(blockedStart);
+  const be = toUtcMillis(blockedEnd);
+  if (!Number.isFinite(bs) || !Number.isFinite(be)) return false;
+  return bookings.some((b) => {
+    if (![BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE].includes(b.status))
+      return false;
+    const bss = toUtcMillis(b.blockedStartAt);
+    const bee = toUtcMillis(b.blockedEndAt);
+    if (!Number.isFinite(bss) || !Number.isFinite(bee)) return false;
+    return bss < be && bee > bs;
+  });
 }
 
 export async function loadPublicEventContext(hostUsername, eventSlug) {
@@ -112,11 +130,17 @@ export async function getSlotsForPublicEvent({
   hostUsername,
   eventSlug,
   date,
+  durationMinutes: durationQuery,
 }) {
   const { host, eventType } = await loadPublicEventContext(hostUsername, eventSlug);
   if (!host || !eventType) return { notFound: true };
   const schedule = eventType.availabilityScheduleId;
   if (!schedule) return { notFound: true };
+
+  const slotDurationMinutes = resolveDurationMinutesForRequest(
+    eventType,
+    durationQuery
+  );
 
   const zone = schedule.timezone;
   const selectedDay = DateTime.fromISO(date, { zone }).startOf("day");
@@ -147,7 +171,7 @@ export async function getSlotsForPublicEvent({
     date,
     intervals,
     eventType.slotIntervalMinutes,
-    eventType.durationMinutes,
+    slotDurationMinutes,
     nowHostZoned,
     eventType.minimumNoticeMinutes,
     windowEnd
