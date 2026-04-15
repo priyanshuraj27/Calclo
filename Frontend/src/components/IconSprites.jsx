@@ -219,6 +219,39 @@ export function IconSprites() {
   <line x1="19" y1="12" x2="5" y2="12"></line>
   <polyline points="12 19 5 12 12 5"></polyline>
 </symbol>
+<symbol class="lucide lucide-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="trash">
+  <path d="M3 6h18"></path>
+  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+</symbol>
+<symbol class="lucide lucide-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="info">
+  <circle cx="12" cy="12" r="10"></circle>
+  <path d="M12 16v-4"></path>
+  <path d="M12 8h.01"></path>
+</symbol>
+<symbol class="lucide lucide-edit-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="edit-2">
+  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+</symbol>
+<symbol class="lucide lucide-message-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="message-square">
+  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+</symbol>
+<symbol class="lucide lucide-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="check">
+  <polyline points="20 6 9 17 4 12"></polyline>
+</symbol>
+<symbol class="lucide lucide-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="clock">
+  <circle cx="12" cy="12" r="10"></circle>
+  <polyline points="12 6 12 12 16 14"></polyline>
+</symbol>
+<symbol class="lucide lucide-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="calendar">
+  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+  <line x1="16" y1="2" x2="16" y2="6"></line>
+  <line x1="8" y1="2" x2="8" y2="6"></line>
+  <line x1="3" y1="10" x2="21" y2="10"></line>
+</symbol>
+<symbol class="lucide lucide-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="video">
+  <path d="m22 8-6 4 6 4V8Z"></path>
+  <rect x="2" y="6" width="14" height="12" rx="2" ry="2"></rect>
+</symbol>
 </defs>
 </svg>
 `,

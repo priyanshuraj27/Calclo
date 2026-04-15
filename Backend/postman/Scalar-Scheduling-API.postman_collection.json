@@ -1,0 +1,334 @@
+{
+  "info": {
+    "name": "Scalar Scheduling API",
+    "description": "Express + MongoDB scheduling backend. Single-host mode: no JWT; protected routes resolve user from DEFAULT_HOST_USERNAME (default priyanshu). Set {{baseUrl}} to match PORT in .env.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "hostUsername", "value": "priyanshu" },
+    { "key": "eventSlug", "value": "15min" },
+    { "key": "eventTypeId", "value": "" },
+    { "key": "scheduleId", "value": "" },
+    { "key": "overrideId", "value": "" },
+    { "key": "bookingId", "value": "" },
+    { "key": "date", "value": "2026-04-20" },
+    { "key": "confirmationToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Docs",
+      "item": [
+        {
+          "name": "API index",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/docs"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users (single host)",
+      "item": [
+        {
+          "name": "Current user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/current-user"
+          }
+        },
+        {
+          "name": "Update account",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Priyanshu\",\n  \"email\": \"priyanshuuno125@gmail.com\",\n  \"defaultTimezone\": \"Asia/Kolkata\",\n  \"avatar\": \"\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/users/update-account"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Event types (dashboard)",
+      "item": [
+        {
+          "name": "List my event types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/event-types"
+          }
+        },
+        {
+          "name": "Create event type",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"45 Min Deep Dive\",\n  \"slug\": \"45min-deep\",\n  \"description\": \"Longer session\",\n  \"durationMinutes\": 45,\n  \"hidden\": false,\n  \"active\": true,\n  \"color\": \"#8b5cf6\",\n  \"availabilityScheduleId\": \"{{scheduleId}}\",\n  \"bufferBeforeMinutes\": 0,\n  \"bufferAfterMinutes\": 0,\n  \"slotIntervalMinutes\": 15,\n  \"minimumNoticeMinutes\": 60,\n  \"bookingWindowDays\": 30,\n  \"bookingQuestions\": [\n    {\n      \"key\": \"topic\",\n      \"label\": \"What would you like to discuss?\",\n      \"type\": \"TEXT\",\n      \"required\": true,\n      \"options\": []\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/event-types"
+          }
+        },
+        {
+          "name": "Get my event type",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/event-types/{{eventTypeId}}"
+          }
+        },
+        {
+          "name": "Update my event type",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"15 Min Meeting (updated)\",\n  \"description\": \"Updated description\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/event-types/{{eventTypeId}}"
+          }
+        },
+        {
+          "name": "Delete my event type",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/event-types/{{eventTypeId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Schedules (dashboard)",
+      "item": [
+        {
+          "name": "List my schedules",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/schedules"
+          }
+        },
+        {
+          "name": "Create schedule",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Evening only\",\n  \"timezone\": \"Asia/Kolkata\",\n  \"isDefault\": false,\n  \"weeklyRules\": {\n    \"monday\": [{ \"start\": \"18:00\", \"end\": \"21:00\" }],\n    \"tuesday\": [{ \"start\": \"18:00\", \"end\": \"21:00\" }],\n    \"wednesday\": [],\n    \"thursday\": [],\n    \"friday\": [],\n    \"saturday\": [],\n    \"sunday\": []\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/schedules"
+          }
+        },
+        {
+          "name": "Get schedule",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/schedules/{{scheduleId}}"
+          }
+        },
+        {
+          "name": "Update schedule",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Working hours\",\n  \"timezone\": \"Asia/Kolkata\",\n  \"isDefault\": true,\n  \"weeklyRules\": {\n    \"monday\": [{ \"start\": \"09:00\", \"end\": \"17:00\" }],\n    \"tuesday\": [{ \"start\": \"09:00\", \"end\": \"17:00\" }],\n    \"wednesday\": [{ \"start\": \"09:00\", \"end\": \"17:00\" }],\n    \"thursday\": [{ \"start\": \"09:00\", \"end\": \"17:00\" }],\n    \"friday\": [{ \"start\": \"09:00\", \"end\": \"17:00\" }],\n    \"saturday\": [],\n    \"sunday\": []\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/schedules/{{scheduleId}}"
+          }
+        },
+        {
+          "name": "Delete schedule",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/schedules/{{scheduleId}}"
+          }
+        },
+        {
+          "name": "List overrides for schedule",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/schedules/{{scheduleId}}/overrides"
+          }
+        },
+        {
+          "name": "Add / upsert date override",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2026-04-25\",\n  \"type\": \"CUSTOM_HOURS\",\n  \"intervals\": [{ \"start\": \"10:00\", \"end\": \"14:00\" }]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/schedules/{{scheduleId}}/overrides"
+          }
+        },
+        {
+          "name": "Add closed override (block day)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2026-04-26\",\n  \"type\": \"CLOSED\",\n  \"intervals\": []\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/schedules/{{scheduleId}}/overrides"
+          }
+        },
+        {
+          "name": "Delete override",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/schedules/{{scheduleId}}/overrides/{{overrideId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bookings (dashboard)",
+      "item": [
+        {
+          "name": "List bookings (tab=upcoming)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/bookings?tab=upcoming"
+          }
+        },
+        {
+          "name": "List bookings (tab=past)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/bookings?tab=past"
+          }
+        },
+        {
+          "name": "List bookings (tab=cancelled)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/bookings?tab=cancelled"
+          }
+        },
+        {
+          "name": "List bookings (tab=unconfirmed)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/bookings?tab=unconfirmed"
+          }
+        },
+        {
+          "name": "Cancel booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancellationReason\": \"Host cancelled\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/bookings/{{bookingId}}/cancel"
+          }
+        },
+        {
+          "name": "Reschedule booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newStartAt\": \"2026-04-22T04:00:00.000Z\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/bookings/{{bookingId}}/reschedule"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public (booker)",
+      "item": [
+        {
+          "name": "List public event types for host",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/public/hosts/{{hostUsername}}/event-types"
+          }
+        },
+        {
+          "name": "Get public event",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/public/hosts/{{hostUsername}}/events/{{eventSlug}}"
+          }
+        },
+        {
+          "name": "Get slots for date",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/public/hosts/{{hostUsername}}/events/{{eventSlug}}/slots?date={{date}}"
+          }
+        },
+        {
+          "name": "Create booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startAt\": \"2026-04-21T03:30:00.000Z\",\n  \"bookerName\": \"Test Booker\",\n  \"bookerEmail\": \"booker@example.com\",\n  \"answers\": [{ \"key\": \"topic\", \"value\": \"Product demo\" }],\n  \"notes\": \"Looking forward to it.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/public/hosts/{{hostUsername}}/events/{{eventSlug}}/bookings"
+          }
+        },
+        {
+          "name": "Booking confirmation (token from create response)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/public/bookings/{{bookingId}}/confirmation?token={{confirmationToken}}"
+          }
+        }
+      ]
+    }
+  ]
+}

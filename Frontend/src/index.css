@@ -94,9 +94,6 @@ body {
 }
 
 /* ─── Combined ButtonGroup ─────────────────────────────── */
-/* Replicates Cal.com's ButtonGroup combined variant:
-   first child gets left radius, last child gets right radius,
-   middle children lose all radius, all share -1px margin overlap */
 .btn-icon-secondary {
   display: inline-flex;
   align-items: center;
@@ -119,25 +116,70 @@ body {
   border-color: var(--cal-border);
 }
 
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 8px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 8px;
+  background: var(--cal-bg-inverted);
+  color: var(--cal-text-inverted);
+  cursor: pointer;
+  transition: opacity 0.15s;
+  border: none;
+}
+.btn-primary:hover {
+  opacity: 0.9;
+}
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
 .btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 36px;
-  padding: 8px 12px;
+  padding: 8px 16px;
   font-size: 0.875rem;
-  font-weight: 500;
-  border-radius: 10px;
-  border: 1px solid var(--cal-border);
-  background: var(--cal-bg);
-  color: var(--cal-text);
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--cal-border-subtle);
+  background: var(--cal-bg-subtle);
+  color: var(--cal-text-emphasis);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.1s;
 }
 .btn-secondary:hover {
-  background: var(--cal-bg-muted);
+  background: var(--cal-bg-emphasis);
+  border-color: var(--cal-border-emphasis);
+}
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+.btn-icon-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  min-width: 36px;
+  padding: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--cal-border-subtle);
+  background: var(--cal-bg-subtle);
   color: var(--cal-text-emphasis);
-  border-color: var(--cal-border);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.btn-icon-secondary:hover {
+  background: var(--cal-bg-emphasis);
+  border-color: var(--cal-border-emphasis);
 }
 
 .btn-group-combined > * {
@@ -156,12 +198,8 @@ body {
 }
 
 @keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: .5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
 }
 
 .animate-pulse {
@@ -173,14 +211,57 @@ body {
   border-radius: 0.375rem;
 }
 
+/* Primary Button - Fixed for Pixel Perfection */
 .btn-primary {
-  background-color: var(--cal-bg-emphasis);
+  background-color: var(--cal-bg-inverted);
   color: var(--cal-text-inverted);
-  border: 1px solid var(--cal-border-emphasis);
+  border: 1px solid var(--cal-bg-inverted);
 }
 
 .dark .btn-primary {
   background-color: white;
   color: black;
   border-color: white;
+}
+
+/* Switch Component Styles */
+.switch-root {
+  width: 28px;
+  height: 16px;
+  background-color: var(--cal-border-subtle);
+  border-radius: 9999px;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  outline: none;
+}
+
+.dark .switch-root {
+  background-color: #333333;
+}
+
+.dark .switch-root[data-state='checked'] {
+  background-color: white;
+}
+
+.switch-thumb {
+  display: block;
+  width: 12px;
+  height: 12px;
+  background-color: white;
+  border-radius: 9999px;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateX(2px);
+  will-change: transform;
+}
+
+.switch-root[data-state='checked'] .switch-thumb {
+  transform: translateX(14px);
+  background-color: black;
+}
+
+.switch-root[data-state='checked'] .switch-thumb {
+  transform: translateX(14px);
 }

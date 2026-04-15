@@ -1,24 +1,134 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { EventTypeCard } from "./EventTypeCard";
-import { demoEventTypes, demoProfile } from "../data/demo";
 import { Icon } from "./Icon";
 import { Skeleton, SkeletonText, SkeletonButton, SkeletonAvatar } from "./Skeleton";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
+import { CreateEventTypeModal } from "./CreateEventTypeModal";
+import { ConfirmationModal } from "./ConfirmationModal";
+import { apiData } from "../api/client.js";
 
-export function EventTypesPage() {
+function mapEventTypeForCard(doc) {
+  return {
+    id: doc._id,
+    title: doc.title,
+    slug: doc.slug,
+    length: doc.durationMinutes,
+    description: doc.description || "",
+    hidden: Boolean(doc.hidden),
+    color: doc.color,
+    schedulingType: doc.schedulingType,
+    recurringEvent: null,
+    requiresConfirmation: doc.requiresConfirmation,
+    metadata: doc.metadata,
+    seatsPerTimeSlot: doc.seatsPerTimeSlot,
+  };
+}
+
+export function EventTypesPage({ onNavigate }) {
+  const [eventTypes, setEventTypes] = useState([]);
+  const [profile, setProfile] = useState({
+    slug: "priyanshu",
+    name: "",
+    image: null,
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
   const [parent] = useAutoAnimate();
 
-  // Simulate loading to show wireframes
-  useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 800);
-    return () => clearTimeout(timer);
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [user, types] = await Promise.all([
+        apiData("/api/v1/users/current-user"),
+        apiData("/api/v1/event-types"),
+      ]);
+      setProfile({
+        slug: user.username,
+        name: user.fullName,
+        image: user.avatar || null,
+      });
+      setEventTypes((types || []).map(mapEventTypeForCard));
+    } catch (e) {
+      showToast(e.message || "Failed to load");
+      setEventTypes([]);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const filtered = demoEventTypes.filter((t) =>
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const filtered = eventTypes.filter((t) =>
     t.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const patchEventType = async (id, body) => {
+    await apiData(`/api/v1/event-types/${id}`, {
+      method: "PATCH",
+      json: body,
+    });
+  };
+
+  const handleAction = async (id, action, extra) => {
+    const type = eventTypes.find((t) => t.id === id);
+    if (!type) return;
+
+    if (action === "delete") {
+      setDeleteId(id);
+    } else if (action === "duplicate") {
+      try {
+        const base = `${type.slug}-copy`.slice(0, 80);
+        const slug = `${base}-${Date.now().toString(36)}`;
+        await apiData("/api/v1/event-types", {
+          method: "POST",
+          json: {
+            title: `${type.title} (Copy)`,
+            slug,
+            description: type.description || "",
+            durationMinutes: type.length,
+            hidden: type.hidden,
+            active: true,
+            color: type.color,
+            schedulingType: type.schedulingType,
+            requiresConfirmation: type.requiresConfirmation,
+            seatsPerTimeSlot: type.seatsPerTimeSlot,
+            metadata: type.metadata,
+          },
+        });
+        showToast(`${type.title} duplicated successfully`);
+        await loadData();
+      } catch (e) {
+        showToast(e.message || "Duplicate failed");
+      }
+    } else if (action === "preview" || action === "copy-link") {
+      onNavigate(`/book/${profile.slug}/${encodeURIComponent(type.slug)}`);
+    } else if (action === "update") {
+      try {
+        const hidden = !extra;
+        await patchEventType(id, { hidden });
+        setEventTypes((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, hidden } : t))
+        );
+        showToast("Event type updated");
+      } catch (e) {
+        showToast(e.message || "Update failed");
+      }
+    } else if (action === "edit") {
+      onNavigate(
+        `/event-types/${id}?title=${encodeURIComponent(type.title)}`
+      );
+    }
+  };
 
   if (isLoading) {
     return (
@@ -56,57 +166,50 @@ export function EventTypesPage() {
 
   return (
     <div className="flex-1 lg:pr-6">
-      {/* ── Header row ─────────────────────────────────────── */}
-      <div className="flex items-center md:mb-6 md:mt-0 lg:mb-8">
-        <header className="flex w-full max-w-full items-center flex-wrap md:flex-nowrap gap-2 md:gap-0">
-          {/* Heading + Subtitle */}
-          <div className="hidden min-w-0 flex-1 ltr:mr-4 rtl:ml-4 md:block text-emphasis">
-            <h3 className="font-cal max-w-28 sm:max-w-72 md:max-w-80 inline truncate text-lg font-semibold tracking-wide sm:text-xl md:block xl:max-w-full">
+      <div className="flex items-center mb-8">
+        <header className="flex w-full max-w-full items-center justify-between gap-4 px-2 sm:px-0">
+          <div className="min-w-0 flex-1">
+            <h1 className="font-cal text-[20px] font-bold text-emphasis leading-tight">
               Event types
-            </h3>
-            <p className="text-subtle hidden text-sm md:block mt-1">
+            </h1>
+            <p className="text-subtle text-[13px] mt-0.5">
               Configure different events for people to book on your calendar.
             </p>
           </div>
-
-          {/* CTA: Search + New */}
-          <div className="shrink-0 md:relative md:bottom-auto md:right-auto ml-auto">
-            <div className="flex items-center gap-4">
-              {/* Search */}
-              <div className="max-w-64 relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                  <Icon name="search" className="text-subtle h-4 w-4" />
-                </div>
-                <input
-                  type="search"
-                  autoComplete="off"
-                  placeholder="Search"
-                  className="bg-default border-subtle text-emphasis block w-full rounded-md border py-2 pl-10 pr-3 text-sm focus:border-brand focus:ring-1 focus:ring-brand focus:outline-none transition-all placeholder:text-muted"
+          
+          <div className="flex items-center gap-3">
+             <div className="hidden sm:flex items-center bg-transparent border border-subtle rounded-md px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-emphasis transition-all">
+                <Icon name="search" className="h-[14px] w-[14px] text-subtle" />
+                <input 
+                  type="text" 
+                  placeholder="Search" 
+                  className="bg-transparent border-none outline-none text-[13px] px-2 text-emphasis w-32 md:w-36"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
-              </div>
-              {/* + New button */}
-              <button className="whitespace-nowrap inline-flex items-center text-sm font-medium relative rounded-md transition cursor-pointer gap-1 px-3 py-2 hover:opacity-90 btn-primary">
-                <Icon name="plus" className="h-4 w-4 shrink-0 stroke-[1.5px]" />
+             </div>
+             <button 
+               onClick={() => setIsModalOpen(true)}
+               className="btn-primary flex items-center gap-2 px-3.5 py-2 text-sm"
+             >
+                <Icon name="plus" className="h-4 w-4" />
                 <span>New</span>
-              </button>
-            </div>
+             </button>
           </div>
         </header>
       </div>
 
-      {/* ── Event Type List ──────────────────────────────────── */}
-      <div className="bg-default border-subtle flex flex-col rounded-md border overflow-hidden">
-        <ul ref={parent} className="divide-subtle w-full divide-y" data-testid="event-types">
+      <div className="bg-default border border-[#262626] rounded-xl overflow-hidden">
+        <ul ref={parent} className="divide-y divide-[#1a1a1a] w-full" data-testid="event-types">
           {filtered.length > 0 ? (
             filtered.map((type, index) => (
               <EventTypeCard
                 key={type.id}
                 type={type}
-                profile={demoProfile}
+                profile={profile}
                 isFirst={index === 0}
                 isLast={index === filtered.length - 1}
+                onAction={(action, val) => handleAction(type.id, action, val)}
               />
             ))
           ) : (
@@ -122,7 +225,58 @@ export function EventTypesPage() {
           )}
         </ul>
       </div>
+
+      <CreateEventTypeModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        profileSlug={profile.slug}
+        onContinue={async (values) => {
+          try {
+            const created = await apiData("/api/v1/event-types", {
+              method: "POST",
+              json: {
+                title: values.title,
+                slug: values.slug,
+                description: values.description || "",
+                durationMinutes: Number(values.duration) || 15,
+                hidden: false,
+                active: true,
+              },
+            });
+            setIsModalOpen(false);
+            onNavigate(
+              `/event-types/${created._id}?title=${encodeURIComponent(values.title)}`
+            );
+          } catch (e) {
+            showToast(e.message || "Create failed");
+          }
+        }}
+      />
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] bg-emphasis text-inverted px-4 py-2 rounded-lg shadow-2xl animate-in slide-in-from-bottom-2 duration-300 flex items-center gap-2">
+           <Icon name="check" className="h-4 w-4 bg-green-500 rounded-full p-0.5" />
+           <span className="text-sm font-semibold">{toast}</span>
+        </div>
+      )}
+
+      <ConfirmationModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        title="Delete Event Type"
+        description="Are you sure you want to delete this event type? This action cannot be undone."
+        onConfirm={async () => {
+          try {
+            await apiData(`/api/v1/event-types/${deleteId}`, { method: "DELETE" });
+            setEventTypes((prev) => prev.filter((t) => t.id !== deleteId));
+            setDeleteId(null);
+            showToast("Event type deleted");
+          } catch (e) {
+            showToast(e.message || "Delete failed");
+            setDeleteId(null);
+          }
+        }}
+      />
     </div>
   );
 }
-

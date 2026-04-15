@@ -8,7 +8,13 @@ export function Icon({ name, size = 16, className, ...props }) {
     <svg
       height={size}
       width={size}
-      className={`fill-transparent ${className || ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className || ""}`}
       {...props}
       aria-hidden
     >

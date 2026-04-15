@@ -1,41 +1,41 @@
-import express, { urlencoded } from 'express';
-import cookieParser from 'cookie-parser';
-import cors from 'cors';
+import express, { urlencoded } from "express";
+import cookieParser from "cookie-parser";
+import cors from "cors";
+import { ApiError } from "./utils/ApiError.js";
+import { errorHandler } from "./middlewares/error.middleware.js";
+
+import docsRouter from "./docs.routes.js";
+import userRouter from "./routes/user.routes.js";
+import eventTypeRouter from "./routes/eventType.routes.js";
+import availabilityRouter from "./routes/availabilitySchedule.routes.js";
+import bookingRouter from "./routes/booking.routes.js";
+import publicRouter from "./routes/public.routes.js";
+
 const app = express();
-// console.log("app.js");
-app.use(cors({
-    origin : process.env.CORS_ORIGIN,
-    credentials : true
-}))
 
- app.use(express.json({limit : "50mb"}));
- app.use(urlencoded({extended : true, limit : "50mb"}));
- app.use(express.static('public'));
- app.use(cookieParser());
- 
-// Routes import 
-import docsRouter from './docs.routes.js';
- 
-// import userRouter from './routes/user.routes.js';
-// import healthcheckRouter from "./routes/healthcheck.routes.js"
-// import tweetRouter from "./routes/tweet.routes.js"
-// import subscriptionRouter from "./routes/subscription.routes.js"
-// import videoRouter from "./routes/video.routes.js"
-// import commentRouter from "./routes/comment.routes.js"
-// import likeRouter from "./routes/like.routes.js"
-// import playlistRouter from "./routes/playlist.routes.js"
-// import dashboardRouter from "./routes/dashboard.routes.js"
-// routes declaration
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN || true,
+    credentials: true,
+  })
+);
+
+app.use(express.json({ limit: "50mb" }));
+app.use(urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.static("public"));
+app.use(cookieParser());
+
 app.use("/api/v1/docs", docsRouter);
+app.use("/api/v1/users", userRouter);
+app.use("/api/v1/event-types", eventTypeRouter);
+app.use("/api/v1/schedules", availabilityRouter);
+app.use("/api/v1/bookings", bookingRouter);
+app.use("/api/v1/public", publicRouter);
 
-// app.use("/api/v1/users",userRouter);
-// app.use("/api/v1/tweets", tweetRouter)
-// app.use("/api/v1/healthcheck", healthcheckRouter)
-// app.use("/api/v1/subscriptions", subscriptionRouter)
-// app.use("/api/v1/videos", videoRouter)
-// app.use("/api/v1/comments", commentRouter)
-// app.use("/api/v1/likes", likeRouter)
-// app.use("/api/v1/playlist", playlistRouter)
-// app.use("/api/v1/dashboard", dashboardRouter)
+app.use((req, _res, next) => {
+  next(new ApiError(404, `Route not found: ${req.originalUrl}`));
+});
 
-export {app};
+app.use(errorHandler);
+
+export { app };

@@ -40,7 +40,6 @@ export function Sidebar({ activePath, onNavigate }) {
               }} 
             />
           ))}
-          <ThemeToggle />
         </div>
       </div>
     </aside>
