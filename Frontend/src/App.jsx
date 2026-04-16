@@ -134,12 +134,38 @@ function App() {
     }
   };
 
-  if (currentPath === "/book" || currentPath.startsWith("/book/")) {
+  const pathParts = currentPath.split("/").filter(Boolean);
+  const reservedTopLevelRoutes = new Set([
+    "book",
+    "event-types",
+    "bookings",
+    "availability",
+    "teams",
+    "apps",
+    "routing",
+    "workflows",
+    "insights",
+    "refer",
+    "settings",
+    "api",
+  ]);
+  const isShortPublicBookingRoute =
+    pathParts.length >= 2 && !reservedTopLevelRoutes.has(pathParts[0]);
+
+  if (
+    currentPath === "/book" ||
+    currentPath.startsWith("/book/") ||
+    isShortPublicBookingRoute
+  ) {
     const parts = currentPath.split("/").filter(Boolean);
     const defaultHost =
       import.meta.env.VITE_DEFAULT_HOST_USERNAME || "priyanshu";
-    const hostUsername = parts[1] || defaultHost;
-    const eventSlug = parts[2] || "15min";
+    const hostUsername = isShortPublicBookingRoute
+      ? parts[0] || defaultHost
+      : parts[1] || defaultHost;
+    const eventSlug = isShortPublicBookingRoute
+      ? parts[1] || "15min"
+      : parts[2] || "15min";
     return (
       <div className="h-dvh min-h-0 w-full overflow-y-auto overflow-x-hidden bg-[#0a0a0a] font-sans">
         <IconSprites />
