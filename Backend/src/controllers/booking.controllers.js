@@ -2,13 +2,12 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import crypto from "crypto";
-import { Booking } from "../models/booking.models.js";
-import { EventType } from "../models/eventType.models.js";
-import { BookingToken } from "../models/bookingToken.models.js";
+import { prisma } from "../db/prisma.js";
 import { BOOKING_STATUS } from "../constants/scheduling.constants.js";
 import { BOOKING_TOKEN_PURPOSE } from "../constants/scheduling.constants.js";
 import { hasOverlap } from "../services/slotGeneration.service.js";
 import { resolveDurationMinutesForRequest } from "../utils/eventTypeDuration.util.js";
+import { withMongoId } from "../utils/prismaNormalize.util.js";
 
 const activeStatuses = [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE];
 const hashToken = (raw) =>
@@ -19,22 +18,22 @@ const tabFilter = (tab) => {
   switch (tab) {
     case "upcoming":
       return {
-        status: { $in: activeStatuses },
-        startAt: { $gte: now },
+        status: { in: activeStatuses },
+        startAt: { gte: now },
       };
     case "past":
-      return { status: BOOKING_STATUS.CONFIRMED, startAt: { $lt: now } };
+      return { status: BOOKING_STATUS.CONFIRMED, startAt: { lt: now } };
     case "cancelled":
       return { status: BOOKING_STATUS.CANCELLED };
     case "unconfirmed":
       return {
         status: BOOKING_STATUS.TENTATIVE,
-        startAt: { $gte: now },
+        startAt: { gte: now },
       };
     default:
       return {
-        status: { $in: activeStatuses },
-        startAt: { $gte: now },
+        status: { in: activeStatuses },
+        startAt: { gte: now },
       };
   }
 };
@@ -42,46 +41,68 @@ const tabFilter = (tab) => {
 export const listMyBookings = asyncHandler(async (req, res) => {
   const tab = req.query.tab || "upcoming";
   const filter = { hostUserId: req.user._id, ...tabFilter(tab) };
-  const items = await Booking.find(filter)
-    .populate(
-      "eventTypeId",
-      "title slug durationMinutes durationOptions bufferBeforeMinutes bufferAfterMinutes requiresConfirmation"
-    )
-    .sort({ startAt: tab === "past" ? -1 : 1 })
-    .limit(100);
-  return res.status(200).json(new ApiResponse(200, "OK", items));
+  const items = await prisma.booking.findMany({
+    where: filter,
+    include: {
+      eventType: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          durationMinutes: true,
+          durationOptions: true,
+          bufferBeforeMinutes: true,
+          bufferAfterMinutes: true,
+          requiresConfirmation: true,
+        },
+      },
+    },
+    orderBy: { startAt: tab === "past" ? "desc" : "asc" },
+    take: 100,
+  });
+  const mapped = items.map(({ eventType, ...rest }) => ({
+    ...rest,
+    eventTypeId: eventType,
+  }));
+  return res.status(200).json(new ApiResponse(200, "OK", withMongoId(mapped)));
 });
 
 export const cancelMyBooking = asyncHandler(async (req, res) => {
   const { cancellationReason } = req.body;
-  const doc = await Booking.findOne({
-    _id: req.params.bookingId,
-    hostUserId: req.user._id,
+  const doc = await prisma.booking.findFirst({
+    where: { id: req.params.bookingId, hostUserId: req.user._id },
   });
   if (!doc) throw new ApiError(404, "Booking not found");
   if (doc.status === BOOKING_STATUS.CANCELLED) {
     throw new ApiError(400, "Booking already cancelled");
   }
-  doc.status = BOOKING_STATUS.CANCELLED;
-  doc.cancellationReason = cancellationReason ?? "";
-  await doc.save();
-  return res.status(200).json(new ApiResponse(200, "Booking cancelled", doc));
+  const updated = await prisma.booking.update({
+    where: { id: doc.id },
+    data: {
+      status: BOOKING_STATUS.CANCELLED,
+      cancellationReason: cancellationReason ?? "",
+    },
+  });
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Booking cancelled", withMongoId(updated)));
 });
 
 export const rescheduleMyBooking = asyncHandler(async (req, res) => {
   const { newStartAt, durationMinutes: durationBody } = req.body;
   if (!newStartAt) throw new ApiError(400, "newStartAt is required (ISO string)");
 
-  const booking = await Booking.findOne({
-    _id: req.params.bookingId,
-    hostUserId: req.user._id,
+  const booking = await prisma.booking.findFirst({
+    where: { id: req.params.bookingId, hostUserId: req.user._id },
   });
   if (!booking) throw new ApiError(404, "Booking not found");
   if (booking.status === BOOKING_STATUS.CANCELLED) {
     throw new ApiError(400, "Cannot reschedule a cancelled booking");
   }
 
-  const eventType = await EventType.findById(booking.eventTypeId);
+  const eventType = await prisma.eventType.findUnique({
+    where: { id: booking.eventTypeId },
+  });
   if (!eventType) throw new ApiError(404, "Event type missing");
 
   const prevLen = Math.max(
@@ -105,40 +126,46 @@ export const rescheduleMyBooking = asyncHandler(async (req, res) => {
     end.getTime() + eventType.bufferAfterMinutes * 60 * 1000
   );
 
-  const others = await Booking.find({
-    hostUserId: req.user._id,
-    _id: { $ne: booking._id },
-    status: { $in: activeStatuses },
-    blockedStartAt: { $lt: blockedEnd },
-    blockedEndAt: { $gt: blockedStart },
-  }).lean();
+  const others = await prisma.booking.findMany({
+    where: {
+      hostUserId: req.user._id,
+      id: { not: booking.id },
+      status: { in: activeStatuses },
+      blockedStartAt: { lt: blockedEnd },
+      blockedEndAt: { gt: blockedStart },
+    },
+  });
 
   if (hasOverlap(blockedStart, blockedEnd, others)) {
     throw new ApiError(409, "That time slot is no longer available");
   }
 
-  const prevId = booking._id;
-  booking.status = BOOKING_STATUS.RESCHEDULED;
-  await booking.save();
+  const prevId = booking.id;
+  await prisma.booking.update({
+    where: { id: booking.id },
+    data: { status: BOOKING_STATUS.RESCHEDULED },
+  });
 
-  const created = await Booking.create({
-    hostUserId: booking.hostUserId,
-    eventTypeId: booking.eventTypeId,
-    status: eventType.requiresConfirmation
-      ? BOOKING_STATUS.TENTATIVE
-      : BOOKING_STATUS.CONFIRMED,
-    startAt: start,
-    endAt: end,
-    blockedStartAt: blockedStart,
-    blockedEndAt: blockedEnd,
-    bookerName: booking.bookerName,
-    bookerEmail: booking.bookerEmail,
-    answers: booking.answers,
-    notes: booking.notes,
-    meetingWhereType: booking.meetingWhereType || "cal-video",
-    meetingWhereDetail: booking.meetingWhereDetail || "",
-    guestEmails: [...(booking.guestEmails || [])],
-    rescheduledFromBookingId: prevId,
+  const created = await prisma.booking.create({
+    data: {
+      hostUserId: booking.hostUserId,
+      eventTypeId: booking.eventTypeId,
+      status: eventType.requiresConfirmation
+        ? BOOKING_STATUS.TENTATIVE
+        : BOOKING_STATUS.CONFIRMED,
+      startAt: start,
+      endAt: end,
+      blockedStartAt: blockedStart,
+      blockedEndAt: blockedEnd,
+      bookerName: booking.bookerName,
+      bookerEmail: booking.bookerEmail,
+      answers: booking.answers,
+      notes: booking.notes,
+      meetingWhereType: booking.meetingWhereType || "cal-video",
+      meetingWhereDetail: booking.meetingWhereDetail || "",
+      guestEmails: [...(booking.guestEmails || [])],
+      rescheduledFromBookingId: prevId,
+    },
   });
 
   return res
@@ -153,9 +180,8 @@ export const updateBookingDuration = asyncHandler(async (req, res) => {
     throw new ApiError(400, "durationMinutes is required");
   }
 
-  const booking = await Booking.findOne({
-    _id: req.params.bookingId,
-    hostUserId: req.user._id,
+  const booking = await prisma.booking.findFirst({
+    where: { id: req.params.bookingId, hostUserId: req.user._id },
   });
   if (!booking) throw new ApiError(404, "Booking not found");
   if (booking.status === BOOKING_STATUS.CANCELLED) {
@@ -165,7 +191,9 @@ export const updateBookingDuration = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Can only update duration for confirmed or tentative bookings");
   }
 
-  const eventType = await EventType.findById(booking.eventTypeId);
+  const eventType = await prisma.eventType.findUnique({
+    where: { id: booking.eventTypeId },
+  });
   if (!eventType) throw new ApiError(404, "Event type missing");
 
   const chosenMinutes = resolveDurationMinutesForRequest(
@@ -182,26 +210,32 @@ export const updateBookingDuration = asyncHandler(async (req, res) => {
     end.getTime() + eventType.bufferAfterMinutes * 60 * 1000
   );
 
-  const others = await Booking.find({
-    hostUserId: req.user._id,
-    _id: { $ne: booking._id },
-    status: { $in: activeStatuses },
-    blockedStartAt: { $lt: blockedEnd },
-    blockedEndAt: { $gt: blockedStart },
-  }).lean();
+  const others = await prisma.booking.findMany({
+    where: {
+      hostUserId: req.user._id,
+      id: { not: booking.id },
+      status: { in: activeStatuses },
+      blockedStartAt: { lt: blockedEnd },
+      blockedEndAt: { gt: blockedStart },
+    },
+  });
 
   if (hasOverlap(blockedStart, blockedEnd, others)) {
     throw new ApiError(409, "That time range is no longer available");
   }
 
-  booking.endAt = end;
-  booking.blockedStartAt = blockedStart;
-  booking.blockedEndAt = blockedEnd;
-  await booking.save();
+  const updated = await prisma.booking.update({
+    where: { id: booking.id },
+    data: {
+      endAt: end,
+      blockedStartAt: blockedStart,
+      blockedEndAt: blockedEnd,
+    },
+  });
 
   return res
     .status(200)
-    .json(new ApiResponse(200, "Duration updated", booking));
+    .json(new ApiResponse(200, "Duration updated", withMongoId(updated)));
 });
 
 /**
@@ -209,9 +243,8 @@ export const updateBookingDuration = asyncHandler(async (req, res) => {
  * Frontend can redirect to /book/:host/:slug?reschedule=1&bookingId=...&token=...
  */
 export const createMyBookingManageToken = asyncHandler(async (req, res) => {
-  const booking = await Booking.findOne({
-    _id: req.params.bookingId,
-    hostUserId: req.user._id,
+  const booking = await prisma.booking.findFirst({
+    where: { id: req.params.bookingId, hostUserId: req.user._id },
   });
   if (!booking) throw new ApiError(404, "Booking not found");
   if (booking.status === BOOKING_STATUS.CANCELLED) {
@@ -222,15 +255,19 @@ export const createMyBookingManageToken = asyncHandler(async (req, res) => {
   }
 
   const rawToken = crypto.randomBytes(32).toString("hex");
-  await BookingToken.deleteMany({
-    bookingId: booking._id,
-    purpose: BOOKING_TOKEN_PURPOSE.CONFIRMATION,
+  await prisma.bookingToken.deleteMany({
+    where: {
+      bookingId: booking.id,
+      purpose: BOOKING_TOKEN_PURPOSE.CONFIRMATION,
+    },
   });
-  await BookingToken.create({
-    bookingId: booking._id,
-    tokenHash: hashToken(rawToken),
-    purpose: BOOKING_TOKEN_PURPOSE.CONFIRMATION,
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  await prisma.bookingToken.create({
+    data: {
+      bookingId: booking.id,
+      tokenHash: hashToken(rawToken),
+      purpose: BOOKING_TOKEN_PURPOSE.CONFIRMATION,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
   });
 
   return res

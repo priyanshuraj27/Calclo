@@ -9,7 +9,10 @@ import {
   summarizeAvailabilitySubtitle,
 } from "../api/scheduleMappers.js";
 
-const isMongoId = (id) => /^[a-f\d]{24}$/i.test(id || "");
+const isPersistedId = (id) => {
+  const value = String(id || "").trim();
+  return value.length > 0 && value !== "new" && value !== "undefined";
+};
 
 /** IANA zones for schedule timezone (booking engine uses this with weekly hours). */
 const SCHEDULE_TIMEZONES = [
@@ -35,9 +38,9 @@ const SCHEDULE_TIMEZONES = [
 /**
  * Pixel-perfect replica of the Cal.com Schedule Editor page based on the provided screenshot.
  */
-export function AvailabilityPage({ onNavigate, scheduleId }) {
+export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
   const [parent] = useAutoAnimate();
-  const [title, setTitle] = useState("9-5");
+  const [title, setTitle] = useState(initialName || "Working hours");
   const [timezone, setTimezone] = useState("Europe/London");
   const [isDefault, setIsDefault] = useState(false);
   const [subtitle, setSubtitle] = useState("Mon - Fri, 9:00 AM - 5:00 PM");
@@ -85,7 +88,12 @@ export function AvailabilityPage({ onNavigate, scheduleId }) {
   }, [availability, recomputeSubtitle]);
 
   useEffect(() => {
-    if (scheduleId === "new" || !isMongoId(scheduleId)) {
+    if (scheduleId !== "new") return;
+    setTitle((initialName || "Working hours").trim() || "Working hours");
+  }, [initialName, scheduleId]);
+
+  useEffect(() => {
+    if (scheduleId === "new" || !isPersistedId(scheduleId)) {
       skipSave.current = false;
       return;
     }
@@ -112,7 +120,7 @@ export function AvailabilityPage({ onNavigate, scheduleId }) {
   }, [scheduleId]);
 
   useEffect(() => {
-    if (scheduleId === "new" || !isMongoId(scheduleId)) return;
+    if (scheduleId === "new" || !isPersistedId(scheduleId)) return;
     if (skipSave.current) return;
     const t = setTimeout(() => {
       const weeklyRules = availabilityToWeeklyRules(availability);
@@ -164,7 +172,7 @@ export function AvailabilityPage({ onNavigate, scheduleId }) {
       }
       return;
     }
-    if (!isMongoId(scheduleId)) return;
+    if (!isPersistedId(scheduleId)) return;
     try {
       await apiData(`/api/v1/schedules/${scheduleId}`, {
         method: "PATCH",
@@ -181,7 +189,7 @@ export function AvailabilityPage({ onNavigate, scheduleId }) {
   };
 
   const handleDelete = async () => {
-    if (!isMongoId(scheduleId)) {
+    if (!isPersistedId(scheduleId)) {
       onNavigate("/availability");
       return;
     }
@@ -202,10 +210,13 @@ export function AvailabilityPage({ onNavigate, scheduleId }) {
              <button onClick={() => onNavigate("/availability")} className="p-1 hover:bg-subtle rounded-md text-subtle">
                <Icon name="arrow-left" className="h-4 w-4" />
              </button>
-             <div className="flex items-center gap-2 group cursor-pointer">
-                <h1 className="font-cal text-xl sm:text-2xl font-bold text-emphasis leading-none">{title}</h1>
-                <Icon name="edit-2" className="h-4 w-4 text-subtle opacity-0 group-hover:opacity-100 transition" />
-             </div>
+             <input
+               type="text"
+               value={title}
+               onChange={(e) => setTitle(e.target.value)}
+               className="font-cal text-xl sm:text-2xl font-bold text-emphasis leading-none bg-transparent outline-none border-b border-transparent hover:border-subtle focus:border-emphasis transition w-[320px] max-w-[70vw]"
+               aria-label="Schedule name"
+             />
           </div>
           <p className="text-xs sm:text-sm font-medium text-subtle ml-8">{subtitle}</p>
         </div>

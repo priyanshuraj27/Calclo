@@ -184,14 +184,29 @@ function LocationTypeSelect({ value, onChange, instanceId, ariaLabel }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-const isMongoId = (id) => /^[a-f\d]{24}$/i.test(id || "");
+const isPersistedId = (id) => {
+  const value = String(id || "").trim();
+  return value.length > 0 && value !== "new" && value !== "undefined";
+};
 
-export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId }) {
+export function EditEventTypePage({
+  onNavigate,
+  title: initialTitle,
+  initialSlug,
+  initialDescription,
+  initialDuration,
+  initialDurationOptionsText,
+  eventTypeId,
+}) {
   const [title, setTitle] = useState(initialTitle || "15 Min Meeting");
-  const [slug, setSlug] = useState(title.toLowerCase().replace(/ /g, "-"));
-  const [duration, setDuration] = useState(15);
-  const [durationOptionsText, setDurationOptionsText] = useState("");
-  const [description, setDescription] = useState("");
+  const [slug, setSlug] = useState(
+    initialSlug || (initialTitle || "15 Min Meeting").toLowerCase().replace(/ /g, "-")
+  );
+  const [duration, setDuration] = useState(Number(initialDuration) || 15);
+  const [durationOptionsText, setDurationOptionsText] = useState(
+    initialDurationOptionsText || ""
+  );
+  const [description, setDescription] = useState(initialDescription || "");
   const [activeTab, setActiveTab] = useState("basics");
   const [enabled, setEnabled] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -210,6 +225,8 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
   const [extraLocations, setExtraLocations] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [availabilityScheduleId, setAvailabilityScheduleId] = useState("");
+  const [scheduleMenuOpen, setScheduleMenuOpen] = useState(false);
+  const scheduleMenuRef = useRef(null);
 
   const [parent] = useAutoAnimate();
 
@@ -243,7 +260,7 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
   }, []);
 
   useEffect(() => {
-    if (!schedules.length || isMongoId(eventTypeId)) return;
+    if (!schedules.length || isPersistedId(eventTypeId)) return;
     setAvailabilityScheduleId((prev) => {
       if (prev) return prev;
       const def = schedules.find((s) => s.isDefault) || schedules[0];
@@ -262,7 +279,25 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
   }, [schedules, availabilityScheduleId]);
 
   useEffect(() => {
-    if (!isMongoId(eventTypeId)) {
+    if (!scheduleMenuOpen) return;
+    const onDocMouseDown = (e) => {
+      if (scheduleMenuRef.current && !scheduleMenuRef.current.contains(e.target)) {
+        setScheduleMenuOpen(false);
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setScheduleMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [scheduleMenuOpen]);
+
+  useEffect(() => {
+    if (!isPersistedId(eventTypeId)) {
       skipPersist.current = false;
       return;
     }
@@ -302,7 +337,7 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
   }, [eventTypeId]);
 
   useEffect(() => {
-    if (!isMongoId(eventTypeId)) return;
+    if (!isPersistedId(eventTypeId)) return;
     if (skipPersist.current) return;
     const t = setTimeout(() => {
       const patch = {
@@ -313,7 +348,7 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
         hidden: !enabled,
         durationOptions: buildDurationOptionsPayload(duration, durationOptionsText),
       };
-      if (isMongoId(availabilityScheduleId)) {
+      if (isPersistedId(availabilityScheduleId)) {
         patch.availabilityScheduleId = availabilityScheduleId;
       }
       apiData(`/api/v1/event-types/${eventTypeId}`, {
@@ -348,17 +383,17 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
     }
 
     let scheduleId = availabilityScheduleId;
-    if (!isMongoId(scheduleId)) {
+    if (!isPersistedId(scheduleId)) {
       const def = schedules.find((s) => s.isDefault) || schedules[0];
       scheduleId = def?._id ? String(def._id) : "";
     }
-    if (!isMongoId(scheduleId)) {
+    if (!isPersistedId(scheduleId)) {
       throw new Error(
         "Add an availability schedule first (sidebar → Availability), then try again."
       );
     }
 
-    if (isMongoId(eventTypeId)) {
+    if (isPersistedId(eventTypeId)) {
       await apiData(`/api/v1/event-types/${eventTypeId}`, {
         method: "PATCH",
         json: { ...payload, availabilityScheduleId: scheduleId },
@@ -392,7 +427,7 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
   };
 
   const handleDelete = async () => {
-    if (!isMongoId(eventTypeId)) {
+    if (!isPersistedId(eventTypeId)) {
       onNavigate("/event-types");
       return;
     }
@@ -411,13 +446,28 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
     [schedules, availabilityScheduleId]
   );
 
-  const scheduleSummaryLine = useMemo(() => {
-    if (!selectedSchedule?.weeklyRules) return "";
-    const days = summarizeDays(selectedSchedule.weeklyRules);
-    const time = summarizeTime(selectedSchedule.weeklyRules);
-    if (time) return `${days} · ${time}`;
-    return days;
-  }, [selectedSchedule]);
+  const sortedSchedules = useMemo(
+    () =>
+      [...schedules].sort((a, b) => {
+        if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
+          return a.isDefault ? -1 : 1;
+        }
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      }),
+    [schedules]
+  );
+
+  const getScheduleSummaryLine = (schedule) => {
+    if (!schedule?.weeklyRules) return "No hours set";
+    const days = summarizeDays(schedule.weeklyRules);
+    const time = summarizeTime(schedule.weeklyRules);
+    return time ? `${days} · ${time}` : days;
+  };
+
+  const scheduleSummaryLine = useMemo(
+    () => getScheduleSummaryLine(selectedSchedule),
+    [selectedSchedule]
+  );
 
   const sidebarItems = [
     { id: "basics", label: "Basics", sublabel: `${duration} mins`, icon: "link" },
@@ -858,21 +908,74 @@ export function EditEventTypePage({ onNavigate, title: initialTitle, eventTypeId
                       .
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3 rounded-lg border border-subtle bg-default p-3 shadow-sm focus-within:border-emphasis transition">
-                      <Icon name="calendar" className="h-4 w-4 shrink-0 text-subtle" />
-                      <select
-                        className="min-w-0 flex-1 cursor-pointer bg-transparent text-sm font-medium text-emphasis outline-none"
-                        value={availabilityScheduleId}
-                        onChange={(e) => setAvailabilityScheduleId(e.target.value)}
+                    <div className="space-y-3" ref={scheduleMenuRef}>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-3 rounded-lg border border-subtle bg-default p-3 shadow-sm transition hover:border-emphasis"
+                        onClick={() => setScheduleMenuOpen((o) => !o)}
+                        aria-haspopup="listbox"
+                        aria-expanded={scheduleMenuOpen}
                         aria-label="Availability schedule"
                       >
-                        {schedules.map((s) => (
-                          <option key={s._id} value={s._id}>
-                            {s.name}
-                            {s.isDefault ? " (default)" : ""}
-                          </option>
-                        ))}
-                      </select>
+                        <div className="min-w-0 flex items-center gap-3">
+                          <Icon name="calendar" className="h-4 w-4 shrink-0 text-subtle" />
+                          <div className="min-w-0 text-left">
+                            <p className="truncate text-sm font-semibold text-emphasis">
+                              {selectedSchedule?.name || "Choose schedule"}
+                              {selectedSchedule?.isDefault ? " (default)" : ""}
+                            </p>
+                            <p className="truncate text-xs text-subtle">
+                              {selectedSchedule?.timezone || "Timezone unavailable"}
+                            </p>
+                          </div>
+                        </div>
+                        <Icon
+                          name="chevron-down"
+                          className={`h-4 w-4 shrink-0 text-subtle transition-transform ${scheduleMenuOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+
+                      {scheduleMenuOpen ? (
+                        <div
+                          role="listbox"
+                          className="z-20 max-h-72 overflow-y-auto rounded-xl border border-subtle bg-default p-1 shadow-xl"
+                        >
+                          {sortedSchedules.map((s) => {
+                            const isActive =
+                              String(s._id) === String(availabilityScheduleId);
+                            return (
+                              <button
+                                key={s._id}
+                                type="button"
+                                role="option"
+                                aria-selected={isActive}
+                                className={`mb-1 w-full rounded-lg px-3 py-2 text-left transition last:mb-0 ${
+                                  isActive
+                                    ? "bg-subtle/60"
+                                    : "hover:bg-subtle/30"
+                                }`}
+                                onClick={() => {
+                                  setAvailabilityScheduleId(String(s._id));
+                                  setScheduleMenuOpen(false);
+                                }}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="truncate text-sm font-semibold text-emphasis">
+                                    {s.name}
+                                    {s.isDefault ? " (default)" : ""}
+                                  </p>
+                                  {isActive ? (
+                                    <Icon name="check" className="h-4 w-4 shrink-0 text-emphasis" />
+                                  ) : null}
+                                </div>
+                                <p className="mt-0.5 truncate text-xs text-subtle">
+                                  {getScheduleSummaryLine(s)} · {s.timezone || "UTC"}
+                                </p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>

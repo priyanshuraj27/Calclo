@@ -1,14 +1,27 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
-import { User } from "../models/user.models.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import { prisma } from "../db/prisma.js";
+import { withMongoId } from "../utils/prismaNormalize.util.js";
 
 const getCurrentUser = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id).select("-password");
+  const user = await prisma.user.findUnique({
+    where: { id: req.user._id },
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      fullName: true,
+      avatar: true,
+      defaultTimezone: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
   if (!user) throw new ApiError(404, "User not found");
   return res
     .status(200)
-    .json(new ApiResponse(200, "Current user fetched", user));
+    .json(new ApiResponse(200, "Current user fetched", withMongoId(user)));
 });
 
 const updateAccountDetails = asyncHandler(async (req, res) => {
@@ -16,22 +29,29 @@ const updateAccountDetails = asyncHandler(async (req, res) => {
   if (!fullName && !email && !defaultTimezone && avatar === undefined) {
     throw new ApiError(400, "Provide at least one field to update");
   }
-  const user = await User.findByIdAndUpdate(
-    req.user._id,
-    {
-      $set: {
-        ...(fullName !== undefined && { fullName }),
-        ...(email !== undefined && { email: email.toLowerCase() }),
-        ...(defaultTimezone !== undefined && { defaultTimezone }),
-        ...(avatar !== undefined && { avatar }),
-      },
+  const user = await prisma.user.update({
+    where: { id: req.user._id },
+    data: {
+      ...(fullName !== undefined && { fullName }),
+      ...(email !== undefined && { email: String(email).toLowerCase() }),
+      ...(defaultTimezone !== undefined && { defaultTimezone }),
+      ...(avatar !== undefined && { avatar }),
     },
-    { new: true }
-  ).select("-password");
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      fullName: true,
+      avatar: true,
+      defaultTimezone: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
 
   return res
     .status(200)
-    .json(new ApiResponse(200, "Account details updated", user));
+    .json(new ApiResponse(200, "Account details updated", withMongoId(user)));
 });
 
 export { getCurrentUser, updateAccountDetails };

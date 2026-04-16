@@ -16,6 +16,7 @@ import { SettingsPage } from "./components/SettingsPage";
 import { ReferPage } from "./components/ReferPage";
 import { EditEventTypePage } from "./components/EditEventTypePage";
 import { MobileTopBar, MobileBottomNav } from "./components/MobileNav";
+import { apiData } from "./api/client.js";
 
 function App() {
   // Simple routing simulation
@@ -41,6 +42,12 @@ function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  // Warm key caches so Availability opens instantly after navigation.
+  useEffect(() => {
+    apiData("/api/v1/users/current-user").catch(() => {});
+    apiData("/api/v1/schedules").catch(() => {});
+  }, []);
+
   const navigate = (path) => {
     window.history.pushState({}, "", path);
     // Keep pathname state without query so dynamic segments (e.g. event type id)
@@ -58,10 +65,18 @@ function App() {
       const eventTypeId = parts[1] || "";
       const urlParams = new URLSearchParams(window.location.search);
       const title = urlParams.get("title");
+      const slug = urlParams.get("slug");
+      const description = urlParams.get("description");
+      const duration = urlParams.get("duration");
+      const durationExtras = urlParams.get("durationExtras");
       return (
         <EditEventTypePage
           onNavigate={navigate}
           title={title}
+          initialSlug={slug}
+          initialDescription={description}
+          initialDuration={duration}
+          initialDurationOptionsText={durationExtras}
           eventTypeId={eventTypeId}
         />
       );
@@ -70,8 +85,14 @@ function App() {
     if (currentPath.startsWith("/availability/")) {
       const parts = currentPath.split("/").filter(Boolean);
       const scheduleId = parts[1] || "new";
+      const urlParams = new URLSearchParams(window.location.search);
+      const initialName = urlParams.get("name") || "";
       return (
-        <AvailabilityPage onNavigate={navigate} scheduleId={scheduleId} />
+        <AvailabilityPage
+          onNavigate={navigate}
+          scheduleId={scheduleId}
+          initialName={initialName}
+        />
       );
     }
 
@@ -133,7 +154,10 @@ function App() {
   }
 
   const isWidePage =
-    currentPath === "/event-types" || currentPath === "/bookings";
+    currentPath === "/event-types" ||
+    currentPath === "/bookings" ||
+    currentPath === "/availability" ||
+    currentPath.startsWith("/availability/");
 
   return (
     <div className="flex h-screen w-full bg-default text-default font-sans overflow-hidden flex-col md:flex-row">

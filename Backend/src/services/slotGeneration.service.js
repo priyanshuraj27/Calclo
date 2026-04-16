@@ -1,11 +1,9 @@
 import { DateTime } from "luxon";
-import { Booking } from "../models/booking.models.js";
-import { EventType } from "../models/eventType.models.js";
-import { User } from "../models/user.models.js";
-import { AvailabilityOverride } from "../models/availabilityOverride.models.js";
+import { prisma } from "../db/prisma.js";
 import { BOOKING_STATUS } from "../constants/scheduling.constants.js";
 import { OVERRIDE_TYPE } from "../constants/scheduling.constants.js";
 import { resolveDurationMinutesForRequest } from "../utils/eventTypeDuration.util.js";
+import { withMongoId } from "../utils/prismaNormalize.util.js";
 
 const LUXON_WEEKDAY_TO_KEY = {
   1: "monday",
@@ -112,18 +110,21 @@ export function hasOverlap(blockedStart, blockedEnd, bookings) {
 }
 
 export async function loadPublicEventContext(hostUsername, eventSlug) {
-  const host = await User.findOne({
-    username: hostUsername.toLowerCase().trim(),
-  }).lean();
+  const host = await prisma.user.findUnique({
+    where: { username: hostUsername.toLowerCase().trim() },
+  });
   if (!host) return { host: null, eventType: null };
-  const eventType = await EventType.findOne({
-    hostUserId: host._id,
-    slug: eventSlug,
-    active: true,
-  })
-    .populate("availabilityScheduleId")
-    .lean();
-  return { host, eventType };
+  const eventType = await prisma.eventType.findFirst({
+    where: { hostUserId: host._id, slug: eventSlug, active: true },
+    include: { availabilitySchedule: true },
+  });
+  const mappedEventType = eventType
+    ? withMongoId({
+        ...eventType,
+        availabilityScheduleId: eventType.availabilitySchedule,
+      })
+    : null;
+  return { host: withMongoId(host), eventType: mappedEventType };
 }
 
 export async function getSlotsForPublicEvent({
@@ -146,10 +147,9 @@ export async function getSlotsForPublicEvent({
   const selectedDay = DateTime.fromISO(date, { zone }).startOf("day");
   if (!selectedDay.isValid) return { invalidDate: true };
 
-  const override = await AvailabilityOverride.findOne({
-    scheduleId: schedule._id,
-    date,
-  }).lean();
+  const override = await prisma.availabilityOverride.findFirst({
+    where: { scheduleId: schedule._id, date },
+  });
 
   let intervals = [];
   if (override) {
@@ -180,12 +180,14 @@ export async function getSlotsForPublicEvent({
   const dayStartUtc = selectedDay.toUTC().startOf("day").toJSDate();
   const dayEndUtc = selectedDay.toUTC().endOf("day").toJSDate();
 
-  const conflicts = await Booking.find({
-    hostUserId: host._id,
-    status: { $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE] },
-    blockedStartAt: { $lt: dayEndUtc },
-    blockedEndAt: { $gt: dayStartUtc },
-  }).lean();
+  const conflicts = await prisma.booking.findMany({
+    where: {
+      hostUserId: host._id,
+      status: { in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE] },
+      blockedStartAt: { lt: dayEndUtc },
+      blockedEndAt: { gt: dayStartUtc },
+    },
+  });
 
   const slots = [];
   for (const c of candidates) {

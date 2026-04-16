@@ -317,8 +317,13 @@ export function EventTypesPage({ onNavigate }) {
               },
             });
             setIsModalOpen(false);
+            const extrasText = Array.isArray(durationOptions)
+              ? durationOptions
+                  .filter((n) => Number(n) !== durationMinutes)
+                  .join(", ")
+              : "";
             onNavigate(
-              `/event-types/${created._id}?title=${encodeURIComponent(values.title)}`
+              `/event-types/${created._id}?title=${encodeURIComponent(values.title)}&slug=${encodeURIComponent(values.slug || "")}&description=${encodeURIComponent(values.description || "")}&duration=${encodeURIComponent(String(durationMinutes))}&durationExtras=${encodeURIComponent(extrasText)}`
             );
           } catch (e) {
             showToast(e.message || "Create failed");

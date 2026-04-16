@@ -1,5 +1,5 @@
 /**
- * @param {import("mongoose").LeanDocument<any> | Record<string, unknown>} eventType
+ * @param {Record<string, unknown>} eventType
  * @returns {number[]} sorted unique allowed lengths in minutes (always includes durationMinutes)
  */
 export function resolveAllowedDurationMinutes(eventType) {
