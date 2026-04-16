@@ -29,6 +29,8 @@ const eventTypeSchema = new Schema(
     durationMinutes: { type: Number, required: true, min: 1 },
     /** Extra lengths (minutes) bookers may choose; always includes durationMinutes server-side. */
     durationOptions: { type: [Number], default: [] },
+    /** Host-controlled ordering in event type list (lower first). */
+    sortOrder: { type: Number, default: 0, min: 0 },
     hidden: { type: Boolean, default: false },
     active: { type: Boolean, default: true },
     color: { type: String, default: "#292929" },
@@ -52,5 +54,6 @@ const eventTypeSchema = new Schema(
 );
 
 eventTypeSchema.index({ hostUserId: 1, slug: 1 }, { unique: true });
+eventTypeSchema.index({ hostUserId: 1, sortOrder: 1 });
 
 export const EventType = mongoose.model("EventType", eventTypeSchema);

@@ -59,6 +59,12 @@ export const createEventType = asyncHandler(async (req, res) => {
   }
   await assertScheduleOwnedByHost(scheduleId, hostUserId);
 
+  const last = await EventType.findOne({ hostUserId })
+    .sort({ sortOrder: -1, _id: -1 })
+    .select("sortOrder")
+    .lean();
+  const nextSortOrder = Math.max(0, Number(last?.sortOrder) || 0) + 1;
+
   const doc = await EventType.create({
     hostUserId,
     title,
@@ -83,6 +89,7 @@ export const createEventType = asyncHandler(async (req, res) => {
       durationMinutes,
       durationOptions
     ),
+    sortOrder: nextSortOrder,
   });
 
   return res
@@ -93,7 +100,7 @@ export const createEventType = asyncHandler(async (req, res) => {
 export const listMyEventTypes = asyncHandler(async (req, res) => {
   const items = await EventType.find({ hostUserId: req.user._id })
     .populate("availabilityScheduleId", "name timezone isDefault")
-    .sort({ updatedAt: -1 });
+    .sort({ sortOrder: 1, updatedAt: -1, _id: 1 });
   return res.status(200).json(new ApiResponse(200, "OK", items));
 });
 
@@ -156,7 +163,7 @@ export const listPublicEventTypesForHost = asyncHandler(async (req, res) => {
     .select(
       "title slug durationMinutes description color schedulingType requiresConfirmation"
     )
-    .sort({ title: 1 });
+    .sort({ sortOrder: 1, title: 1 });
 
   return res
     .status(200)

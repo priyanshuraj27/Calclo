@@ -18,7 +18,7 @@ import { ActionsDropdown } from "./ActionsDropdown";
  *    </div>
  *  </li>
  */
-export function EventTypeCard({ type, profile, onAction }) {
+export function EventTypeCard({ type, profile, onAction, isFirst, isLast }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [enabled, setEnabled] = useState(!type.hidden);
   const actionsRef = useRef(null);
@@ -43,8 +43,38 @@ export function EventTypeCard({ type, profile, onAction }) {
   }, [isDropdownOpen]);
 
   return (
-    <li className={`group hover:bg-subtle/20 transition-colors ${isDropdownOpen ? 'relative z-40' : ''}`}>
-      <div className="flex items-center px-4 py-4 sm:px-6">
+    <li
+      className={`group hover:bg-subtle/20 transition-colors ${isDropdownOpen ? 'relative z-40' : ''}`}
+    >
+      <div className="relative flex items-center px-4 py-4 sm:px-6">
+        <div className="hidden sm:flex absolute -left-4 top-1/2 -translate-y-1/2 flex-col gap-1 opacity-0 pointer-events-none transition-opacity duration-150 group-hover:opacity-100 group-hover:pointer-events-auto">
+          <button
+            type="button"
+            disabled={isFirst}
+            className="inline-flex h-6 w-6 items-center justify-center rounded border border-subtle text-subtle hover:bg-subtle/40 disabled:opacity-35 disabled:cursor-not-allowed"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAction("move-up");
+            }}
+            title="Move up"
+            aria-label="Move event type up"
+          >
+            <Icon name="chevron-up" className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            disabled={isLast}
+            className="inline-flex h-6 w-6 items-center justify-center rounded border border-subtle text-subtle hover:bg-subtle/40 disabled:opacity-35 disabled:cursor-not-allowed"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAction("move-down");
+            }}
+            title="Move down"
+            aria-label="Move event type down"
+          >
+            <Icon name="chevron-down" className="h-3.5 w-3.5" />
+          </button>
+        </div>
         
         {/* Content — row click opens edit (same as Cal.com) */}
         <button
@@ -88,10 +118,10 @@ export function EventTypeCard({ type, profile, onAction }) {
                 onChange={(val) => { setEnabled(val); onAction('update', val); }} 
               />
               
-              <div className="hidden sm:flex items-center gap-1">
+              <div className="hidden sm:flex items-center rounded-lg border border-subtle overflow-hidden divide-x divide-subtle">
                  <button
                     type="button"
-                    className="p-2 hover:bg-subtle/50 rounded-md text-subtle transition group"
+                    className="p-2 bg-transparent hover:bg-subtle/50 text-subtle transition group"
                     onClick={(e) => {
                       e.stopPropagation();
                       setIsDropdownOpen(false);
@@ -103,7 +133,7 @@ export function EventTypeCard({ type, profile, onAction }) {
                  </button>
                  <button
                     type="button"
-                    className="p-2 hover:bg-subtle/50 rounded-md text-subtle transition group"
+                    className="p-2 bg-transparent hover:bg-subtle/50 text-subtle transition group"
                     onClick={(e) => {
                       e.stopPropagation();
                       setIsDropdownOpen(false);
@@ -113,26 +143,33 @@ export function EventTypeCard({ type, profile, onAction }) {
                  >
                     <Icon name="link" className="h-4 w-4" />
                  </button>
+                 <div className="relative z-[60]">
+                   <button
+                     type="button"
+                     className="inline-flex p-2 bg-transparent hover:bg-subtle/50 text-subtle transition group"
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       setIsDropdownOpen((o) => !o);
+                     }}
+                     aria-expanded={isDropdownOpen}
+                     aria-haspopup="menu"
+                     title="More options"
+                   >
+                     <Icon name="ellipsis" className="h-4 w-4" />
+                   </button>
+                   <ActionsDropdown
+                     isOpen={isDropdownOpen}
+                     onClose={() => setIsDropdownOpen(false)}
+                     onAction={onAction}
+                   />
+                 </div>
               </div>
 
-              {/* One menu anchor for mobile + desktop (avoids duplicate dropdown DOM) */}
-              <div className="relative z-[60]">
+              {/* Mobile-only menu anchor */}
+              <div className="relative z-[60] sm:hidden">
                 <button
                   type="button"
-                  className="p-2 hover:bg-subtle/50 rounded-md text-subtle transition group sm:hidden"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsDropdownOpen((o) => !o);
-                  }}
-                  aria-expanded={isDropdownOpen}
-                  aria-haspopup="menu"
-                  title="More options"
-                >
-                  <Icon name="ellipsis" className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  className="hidden sm:inline-flex p-2 hover:bg-subtle/50 rounded-md text-subtle transition group"
+                  className="p-2 !border-0 !shadow-none !bg-transparent hover:bg-subtle/50 rounded-md text-subtle transition group sm:hidden"
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsDropdownOpen((o) => !o);

@@ -135,7 +135,7 @@ async function ensureEventTypes(hostUserId, scheduleId) {
     },
   ];
 
-  for (const et of specs) {
+  for (const [index, et] of specs.entries()) {
     await EventType.findOneAndUpdate(
       { hostUserId, slug: et.slug },
       {
@@ -160,6 +160,7 @@ async function ensureEventTypes(hostUserId, scheduleId) {
           minimumNoticeMinutes: 0,
           bookingWindowDays: 60,
           bookingQuestions: [],
+          sortOrder: index + 1,
         },
       },
       { upsert: true }

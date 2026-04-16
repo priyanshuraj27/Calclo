@@ -11,12 +11,7 @@ import {
   resolveBookingWhereParts,
 } from "../utils/meetingWhere.js";
 
-const TZ_OPTIONS = [
-  { value: "Asia/Kolkata", label: "Asia/Kolkata" },
-  { value: "America/New_York", label: "America/New_York" },
-  { value: "Europe/London", label: "Europe/London" },
-  { value: "UTC", label: "UTC" },
-];
+const FIXED_BOOKING_TZ = "Asia/Kolkata";
 
 /** Confirmation card always shows times in IST (Indian Standard Time). */
 const ACK_DISPLAY_TZ = "Asia/Kolkata";
@@ -99,6 +94,30 @@ function formatAckIstSingleLine(isoStart, isoEnd) {
     const t1 = formatTime12(isoStart, ACK_DISPLAY_TZ);
     const t2 = formatTime12(isoEnd, ACK_DISPLAY_TZ);
     return `${datePart} | ${t1} - ${t2} (Asia/Calcutta)`;
+  } catch {
+    return "";
+  }
+}
+
+function formatFormerDateIst(isoStart) {
+  try {
+    return new Intl.DateTimeFormat("en-IN", {
+      timeZone: ACK_DISPLAY_TZ,
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(isoStart));
+  } catch {
+    return "";
+  }
+}
+
+function formatFormerTimeIst(isoStart, isoEnd) {
+  try {
+    const t1 = formatTime12(isoStart, ACK_DISPLAY_TZ);
+    const t2 = formatTime12(isoEnd, ACK_DISPLAY_TZ);
+    return `${t1} - ${t2}`;
   } catch {
     return "";
   }
@@ -534,7 +553,7 @@ export function BookerPage({
   const [timeSlots, setTimeSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [use24h, setUse24h] = useState(false);
-  const [timezone, setTimezone] = useState("Asia/Kolkata");
+  const [timezone] = useState(FIXED_BOOKING_TZ);
   const [event, setEvent] = useState({
     title: "15 Min Meeting",
     user: {
@@ -558,6 +577,8 @@ export function BookerPage({
   const [rescheduleCtx, setRescheduleCtx] = useState(null);
   const [rescheduleLoadError, setRescheduleLoadError] = useState(null);
   const [cancelAckBusy, setCancelAckBusy] = useState(false);
+  const [formerStartAt, setFormerStartAt] = useState(null);
+  const [formerEndAt, setFormerEndAt] = useState(null);
 
   const monthLabel = useMemo(
     () =>
@@ -615,6 +636,8 @@ export function BookerPage({
     if (mode !== "1" || !bid || !tok) {
       setRescheduleCtx(null);
       setRescheduleLoadError(null);
+      setFormerStartAt(null);
+      setFormerEndAt(null);
       return;
     }
 
@@ -639,6 +662,8 @@ export function BookerPage({
           return;
         }
         setRescheduleCtx({ bookingId: bid, token: tok });
+        setFormerStartAt(new Date(b.startAt).toISOString());
+        setFormerEndAt(new Date(b.endAt).toISOString());
         setBookerName(b.bookerName || "");
         setBookerEmail(b.bookerEmail || "");
         setMeetingWhereType(b.meetingWhereType || "cal-video");
@@ -711,7 +736,11 @@ export function BookerPage({
         const data = await apiData(
           `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}/slots?${q.toString()}`
         );
-        const slots = data?.slots || [];
+        const nowMs = Date.now();
+        const slots = (data?.slots || []).filter((s) => {
+          const t = new Date(s.startAt).getTime();
+          return Number.isFinite(t) && t > nowMs;
+        });
         setTimeSlots(
           slots.map((s) => ({
             label: s.label,
@@ -726,21 +755,6 @@ export function BookerPage({
       }
     },
     [hostUsername, eventSlug, bookingDuration]
-  );
-
-  const handleBookingDurationChange = useCallback(
-    (next) => {
-      const v = Number(next);
-      if (!Number.isFinite(v)) return;
-      setBookingDuration(v);
-      setSelectedTime(null);
-      setSelectedSlotStartAt(null);
-      setPhase((p) => (p === "form" ? "schedule" : p));
-      if (selectedYmd) {
-        void loadSlots(selectedYmd, v);
-      }
-    },
-    [selectedYmd, loadSlots]
   );
 
   const goPrevMonth = () => {
@@ -929,6 +943,8 @@ export function BookerPage({
               } else if (rescheduleCtx) {
                 setRescheduleCtx(null);
                 setRescheduleLoadError(null);
+                setFormerStartAt(null);
+                setFormerEndAt(null);
                 onNavigate(
                   `/book/${encodeURIComponent(hostUsername)}/${encodeURIComponent(eventSlug)}`
                 );
@@ -958,70 +974,40 @@ export function BookerPage({
                 {event.title}
               </h1>
             </div>
+            {rescheduleCtx && formerStartAt && formerEndAt ? (
+              <div className="space-y-1 text-[12px] text-[#8a8a8a]">
+                <p className="inline-flex items-center gap-1.5">
+                  <Icon name="calendar" className="h-3.5 w-3.5" />
+                  <span>Former time</span>
+                </p>
+                <p className="line-through leading-snug">
+                  {formatFormerDateIst(formerStartAt)}
+                </p>
+                <p className="line-through leading-snug">
+                  {formatFormerTimeIst(formerStartAt, formerEndAt)}
+                </p>
+              </div>
+            ) : null}
               </div>
 
           <div className="space-y-3 text-[13px]">
             <div className="flex items-center gap-2.5 text-[#a3a3a3]">
               <Icon name="clock" className="h-4 w-4 shrink-0 opacity-80" />
-              {!rescheduleCtx &&
-              event.durationOptions &&
-              event.durationOptions.length > 1 ? (
-                <div className="relative min-w-0 flex-1 max-w-[200px]">
-                  <select
-                    className="w-full cursor-pointer rounded-lg border border-[#333] bg-[#141414] px-2 py-1.5 text-[13px] font-medium text-[#e5e5e5] outline-none appearance-none"
-                    style={{ colorScheme: "dark" }}
-                    value={bookingDuration}
-                    onChange={(e) =>
-                      handleBookingDurationChange(Number(e.target.value))
-                    }
-                    aria-label="Meeting length"
-                  >
-                    {event.durationOptions.map((m) => (
-                      <option key={m} value={m} className="bg-[#141414]">
-                        {m} min
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <span>{bookingDuration}m</span>
-              )}
+              <span>{bookingDuration}m</span>
             </div>
             <div className="flex items-center gap-2.5 text-[#a3a3a3]">
               <Icon name="video" className="h-4 w-4 shrink-0 opacity-80" />
               <span className="min-w-0 leading-snug">{meetingWhereSummary}</span>
             </div>
             <div className="relative pt-1">
-              <div className="relative flex items-center gap-2.5 rounded-lg border border-[#333] bg-[#141414] px-3 py-2.5 pr-9">
+              <div className="relative flex items-center gap-2.5 rounded-lg border border-[#333] bg-[#141414] px-3 py-2.5">
                 <Icon name="globe" className="h-4 w-4 shrink-0 text-[#888]" />
-                <select
-                  className="w-full min-w-0 cursor-pointer bg-transparent text-[13px] font-medium text-[#e5e5e5] outline-none appearance-none"
-                  style={{ colorScheme: "dark" }}
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  aria-label="Time zone"
-                >
-                  {TZ_OPTIONS.map((tz) => (
-                    <option key={tz.value} value={tz.value} className="bg-[#141414] text-[#e5e5e5]">
-                      {tz.label}
-                    </option>
-                  ))}
-                </select>
-                <Icon
-                  name="chevron-down"
-                  className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#666]"
-                />
+                <span className="text-[13px] font-medium text-[#e5e5e5]">
+                  {FIXED_BOOKING_TZ}
+                </span>
               </div>
             </div>
           </div>
-
-          {!rescheduleCtx &&
-          event.durationOptions &&
-          event.durationOptions.length === 1 ? (
-            <p className="text-[12px] text-[#666] leading-snug">
-              Only {bookingDuration}-minute meetings are available for this link.
-            </p>
-          ) : null}
 
           {event.description ? (
             <p className="text-[13px] text-[#737373] leading-relaxed whitespace-pre-wrap">
@@ -1041,6 +1027,7 @@ export function BookerPage({
                     </div>
             </div>
           ) : null}
+
         </aside>
 
         {/* ── Column 2 + 3 ─────────────────────────────────── */}
@@ -1143,33 +1130,6 @@ export function BookerPage({
                  </div>
               </div>
 
-                    {!rescheduleCtx &&
-                    event.durationOptions &&
-                    event.durationOptions.length > 1 ? (
-                      <div className="mb-4 flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] font-bold uppercase tracking-wide text-[#737373]">
-                          Length
-                        </span>
-                        <select
-                          className="min-w-[120px] flex-1 cursor-pointer rounded-lg border border-[#333] bg-[#141414] px-2.5 py-2 text-[13px] font-medium text-[#e5e5e5] outline-none appearance-none"
-                          style={{ colorScheme: "dark" }}
-                          value={bookingDuration}
-                          onChange={(e) =>
-                            handleBookingDurationChange(
-                              Number(e.target.value)
-                            )
-                          }
-                          aria-label="Meeting length"
-                        >
-                          {event.durationOptions.map((m) => (
-                            <option key={m} value={m} className="bg-[#141414]">
-                              {m} min
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : null}
-
                     <div className="flex flex-col gap-2 overflow-y-auto max-h-[min(420px,calc(100vh-220px))] pr-1 custom-scrollbar">
                       {slotsLoading ? (
                         <p className="text-sm text-[#737373]">Loading times…</p>
@@ -1213,34 +1173,6 @@ export function BookerPage({
                 <p className="text-xs text-[#737373] mb-4">
                   {selectedDateLabel} · {selectedTime}
                 </p>
-                {!rescheduleCtx &&
-                event.durationOptions &&
-                event.durationOptions.length > 1 ? (
-                  <div className="mb-6 flex flex-wrap items-center gap-2">
-                    <label
-                      htmlFor="booker-duration-form"
-                      className="text-[11px] font-bold uppercase tracking-wide text-[#737373]"
-                    >
-                      Length
-                    </label>
-                    <select
-                      id="booker-duration-form"
-                      className="min-w-[120px] flex-1 cursor-pointer rounded-lg border border-[#333] bg-[#141414] px-2.5 py-2 text-[13px] font-medium text-[#e5e5e5] outline-none appearance-none"
-                      style={{ colorScheme: "dark" }}
-                      value={bookingDuration}
-                      onChange={(e) =>
-                        handleBookingDurationChange(Number(e.target.value))
-                      }
-                      aria-label="Meeting length"
-                    >
-                      {event.durationOptions.map((m) => (
-                        <option key={m} value={m} className="bg-[#141414]">
-                          {m} min
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
                 <form
                   className="space-y-4 flex-1 flex flex-col min-h-0 overflow-y-auto"
                   onSubmit={async (e) => {
@@ -1299,6 +1231,16 @@ export function BookerPage({
                             },
                           }
                         );
+                        // Immediately hide the just-booked slot in this session.
+                        if (selectedSlotStartAt) {
+                          setTimeSlots((prev) =>
+                            prev.filter((s) => s.startAt !== selectedSlotStartAt)
+                          );
+                        }
+                        // Re-sync from API so stale slots are removed too.
+                        if (selectedYmd) {
+                          await loadSlots(selectedYmd, bookingDuration);
+                        }
                       }
                       const nextAck = buildAckFromApi(
                         payload,
@@ -1314,6 +1256,14 @@ export function BookerPage({
                       setPhase("success");
                     } catch (err) {
                       setError(err.message || "Booking failed");
+                      if (
+                        String(err?.message || "")
+                          .toLowerCase()
+                          .includes("no longer available") &&
+                        selectedYmd
+                      ) {
+                        void loadSlots(selectedYmd, bookingDuration);
+                      }
                     }
                   }}
                 >

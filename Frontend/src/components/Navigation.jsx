@@ -77,8 +77,8 @@ export function Navigation({ activePath, onNavigate }) {
                 {isInsights && (
                   <div className="ml-4 flex flex-col gap-1 pr-2 border-l border-subtle pl-4">
                     <button 
-                      onClick={() => onNavigate("/insights")} 
-                      className={`flex w-full rounded-md px-3 py-2 text-sm font-medium transition ${activePath === "/insights" ? "bg-muted text-emphasis" : "text-subtle hover:bg-subtle hover:text-emphasis"}`}
+                      onClick={() => onNavigate("/bookings")} 
+                      className={`flex w-full rounded-md px-3 py-2 text-sm font-medium transition ${activePath === "/bookings" ? "bg-muted text-emphasis" : "text-subtle hover:bg-subtle hover:text-emphasis"}`}
                     >
                       Bookings
                     </button>

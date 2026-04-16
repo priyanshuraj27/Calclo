@@ -25,6 +25,7 @@ function mapEventTypeForCard(doc) {
     requiresConfirmation: doc.requiresConfirmation,
     metadata: doc.metadata,
     seatsPerTimeSlot: doc.seatsPerTimeSlot,
+    sortOrder: Number(doc.sortOrder) || 0,
   };
 }
 
@@ -81,6 +82,38 @@ export function EventTypesPage({ onNavigate }) {
       method: "PATCH",
       json: body,
     });
+  };
+
+  const swapEventTypes = async (sourceIndex, targetIndex) => {
+    if (
+      sourceIndex < 0 ||
+      targetIndex < 0 ||
+      sourceIndex >= eventTypes.length ||
+      targetIndex >= eventTypes.length
+    ) {
+      return;
+    }
+    const source = eventTypes[sourceIndex];
+    const target = eventTypes[targetIndex];
+    if (!source || !target) return;
+
+    const sourceOrder = Number(source.sortOrder) || sourceIndex + 1;
+    const targetOrder = Number(target.sortOrder) || targetIndex + 1;
+
+    const next = [...eventTypes];
+    next[sourceIndex] = { ...target, sortOrder: sourceOrder };
+    next[targetIndex] = { ...source, sortOrder: targetOrder };
+    setEventTypes(next);
+
+    try {
+      await Promise.all([
+        patchEventType(source.id, { sortOrder: targetOrder }),
+        patchEventType(target.id, { sortOrder: sourceOrder }),
+      ]);
+    } catch (e) {
+      showToast(e.message || "Reorder failed");
+      await loadData();
+    }
   };
 
   const handleAction = async (id, action, extra) => {
@@ -144,6 +177,14 @@ export function EventTypesPage({ onNavigate }) {
       } catch (e) {
         showToast(e.message || "Update failed");
       }
+    } else if (action === "move-up") {
+      const index = eventTypes.findIndex((t) => t.id === id);
+      if (index > 0) await swapEventTypes(index, index - 1);
+    } else if (action === "move-down") {
+      const index = eventTypes.findIndex((t) => t.id === id);
+      if (index >= 0 && index < eventTypes.length - 1) {
+        await swapEventTypes(index, index + 1);
+      }
     } else if (action === "edit") {
       onNavigate(
         `/event-types/${id}?title=${encodeURIComponent(type.title)}`
@@ -155,7 +196,7 @@ export function EventTypesPage({ onNavigate }) {
 
   if (isLoading) {
     return (
-      <div className="flex-1 lg:pr-6">
+      <div className="flex-1">
         <div className="flex items-center md:mb-6 md:mt-0 lg:mb-8 justify-between">
            <div className="flex flex-col gap-2">
               <Skeleton className="h-7 w-48" />
@@ -188,7 +229,7 @@ export function EventTypesPage({ onNavigate }) {
   }
 
   return (
-    <div className="flex-1 lg:pr-6">
+    <div className="flex-1">
       <div className="flex items-center mb-8">
         <header className="flex w-full max-w-full items-center justify-between gap-4 px-2 sm:px-0">
           <div className="min-w-0 flex-1">
@@ -225,16 +266,19 @@ export function EventTypesPage({ onNavigate }) {
       <div className="bg-default border border-[#262626] rounded-xl overflow-visible">
         <ul ref={parent} className="divide-y divide-[#1a1a1a] w-full" data-testid="event-types">
           {filtered.length > 0 ? (
-            filtered.map((type, index) => (
-              <EventTypeCard
-                key={type.id}
-                type={type}
-                profile={profile}
-                isFirst={index === 0}
-                isLast={index === filtered.length - 1}
-                onAction={(action, val) => handleAction(type.id, action, val)}
-              />
-            ))
+            filtered.map((type) => {
+              const fullIndex = eventTypes.findIndex((t) => t.id === type.id);
+              return (
+                <EventTypeCard
+                  key={type.id}
+                  type={type}
+                  profile={profile}
+                  isFirst={fullIndex <= 0}
+                  isLast={fullIndex === eventTypes.length - 1}
+                  onAction={(action, val) => handleAction(type.id, action, val)}
+                />
+              );
+            })
           ) : (
             <li className="flex flex-col items-center justify-center py-20 text-emphasis">
               <Icon name="link" className="text-subtle h-10 w-10 mb-4 opacity-50" />

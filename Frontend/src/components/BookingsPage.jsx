@@ -1,77 +1,54 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Icon } from "./Icon";
 import { Skeleton } from "./Skeleton";
-import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { apiData } from "../api/client.js";
-import { mergeAllowedDurations } from "../utils/eventTypeDuration.js";
 
 const TAB_OPTIONS = [
-  { value: "upcoming", label: "Upcoming" },
-  { value: "unconfirmed", label: "Unconfirmed" },
-  { value: "past", label: "Past" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "upcoming", label: "Upcoming", apiTab: "upcoming" },
+  { value: "unconfirmed", label: "Unconfirmed", apiTab: "unconfirmed" },
+  { value: "recurring", label: "Recurring", apiTab: "upcoming" },
+  { value: "past", label: "Past", apiTab: "past" },
+  { value: "canceled", label: "Canceled", apiTab: "cancelled" },
 ];
 
-function toDatetimeLocalValue(isoOrDate) {
-  const d = new Date(isoOrDate);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function mapBookingRow(b) {
+function mapBookingRow(b, hostUsername) {
   const start = new Date(b.startAt);
   const end = new Date(b.endAt);
-  const et =
-    typeof b.eventTypeId === "object" && b.eventTypeId ? b.eventTypeId : {};
-  const baseDm = Number(et.durationMinutes) || 15;
-  const allowedDurations = mergeAllowedDurations(
-    baseDm,
-    Array.isArray(et.durationOptions) ? et.durationOptions : []
-  );
-  const title = et.title || "Meeting";
-  const durationMinutes = Math.max(
-    1,
-    Math.round((end.getTime() - start.getTime()) / 60000)
-  );
-  const durationSelectOptions = [...new Set([...allowedDurations, durationMinutes])].sort(
-    (a, b) => a - b
-  );
+  const et = b.eventTypeId && typeof b.eventTypeId === "object" ? b.eventTypeId : {};
   const tf = (d) =>
-    d
-      .toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      })
-      .toLowerCase();
+    d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
   return {
     id: b._id,
-    title,
-    user: b.bookerName,
-    email: b.bookerEmail,
-    month: start.toLocaleString("en-US", { month: "short" }),
-    date: String(start.getDate()),
-    day: start.toLocaleString("en-US", { weekday: "short" }),
-    time: `${tf(start)} - ${tf(end)}`,
-    durationMinutes,
-    startAtIso: start.toISOString(),
-    durationSelectOptions,
-    statusRaw: b.status,
+    eventTypeId: et._id ? String(et._id) : "",
+    eventSlug: et.slug ? String(et.slug) : "",
+    hostUsername: hostUsername || "",
+    title: et.title || "Meeting",
+    guest: b.bookerName || "Guest",
+    dateLabel: start.toLocaleDateString("en-GB", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+    }),
+    timeLabel: `${tf(start)} - ${tf(end)}`.replace(" - ", " - "),
+    linkLabel: "Join Cal Video",
+    linkHref:
+      et.slug && hostUsername
+        ? `${window.location.origin}/book/${encodeURIComponent(hostUsername)}/${encodeURIComponent(et.slug)}`
+        : "",
   };
 }
 
-export function BookingsPage() {
+export function BookingsPage({ onNavigate }) {
   const [activeTab, setActiveTab] = useState("upcoming");
   const [isLoading, setIsLoading] = useState(true);
   const [bookings, setBookings] = useState([]);
   const [toast, setToast] = useState(null);
-  const [parent] = useAutoAnimate();
-  const [rescheduleOpen, setRescheduleOpen] = useState(null);
-  const [rescheduleFormStart, setRescheduleFormStart] = useState("");
-  const [rescheduleBusy, setRescheduleBusy] = useState(false);
-  const [durationDraft, setDurationDraft] = useState({});
-  const [durationBusyId, setDurationBusyId] = useState(null);
+  const [menuOpenId, setMenuOpenId] = useState(null);
+  const menuRef = useRef(null);
 
   const showToast = (message) => {
     setToast(message);
@@ -81,12 +58,16 @@ export function BookingsPage() {
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
-      const rows = await apiData(`/api/v1/bookings?tab=${activeTab}`);
-      setBookings((rows || []).map(mapBookingRow));
-      setDurationDraft({});
+      const tabCfg = TAB_OPTIONS.find((t) => t.value === activeTab) || TAB_OPTIONS[0];
+      const [me, rows] = await Promise.all([
+        apiData("/api/v1/users/current-user"),
+        apiData(`/api/v1/bookings?tab=${tabCfg.apiTab}`),
+      ]);
+      const mapped = (rows || []).map((r) => mapBookingRow(r, me?.username || ""));
+      setBookings(activeTab === "recurring" ? [] : mapped);
     } catch (e) {
-      showToast(e.message || "Failed to load bookings");
       setBookings([]);
+      showToast(e.message || "Failed to load bookings");
     } finally {
       setIsLoading(false);
     }
@@ -96,337 +77,264 @@ export function BookingsPage() {
     load();
   }, [load]);
 
-  const filteredBookings = bookings;
-
-  const badgeFor = (row) => {
-    const s = (row.statusRaw || "").toUpperCase();
-    if (s === "TENTATIVE")
-      return {
-        label: "Unconfirmed",
-        className:
-          "px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-500 text-[10px] font-bold uppercase tracking-wider",
-      };
-    if (s === "CANCELLED")
-      return {
-        label: "Cancelled",
-        className:
-          "px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-500 text-[10px] font-bold uppercase tracking-wider",
-      };
-    return {
-      label: "Confirmed",
-      className:
-        "px-1.5 py-0.5 rounded-md bg-green-500/10 text-green-500 text-[10px] font-bold uppercase tracking-wider",
+  useEffect(() => {
+    if (!menuOpenId) return;
+    const onPointerDown = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpenId(null);
+      }
     };
-  };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [menuOpenId]);
 
-  const openReschedule = (booking) => {
-    setRescheduleFormStart(toDatetimeLocalValue(booking.startAtIso));
-    setRescheduleOpen(booking);
-  };
-
-  const submitReschedule = async () => {
-    if (!rescheduleOpen) return;
-    const start = new Date(rescheduleFormStart);
-    if (Number.isNaN(start.getTime())) {
-      showToast("Enter a valid start date and time");
-      return;
-    }
-    setRescheduleBusy(true);
+  const handleMenuAction = async (booking, action) => {
+    setMenuOpenId(null);
     try {
-      await apiData(`/api/v1/bookings/${rescheduleOpen.id}/reschedule`, {
-        method: "POST",
-        json: { newStartAt: start.toISOString() },
-      });
-      showToast("Rescheduled");
-      setRescheduleOpen(null);
-      await load();
+      if (action === "edit-event") {
+        if (booking.eventTypeId) {
+          window.history.pushState(
+            {},
+            "",
+            `/event-types/${booking.eventTypeId}?title=${encodeURIComponent(booking.title)}`
+          );
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        } else {
+          showToast("Event details are unavailable for this booking");
+        }
+      } else if (action === "reschedule") {
+        if (!booking.hostUsername || !booking.eventSlug) {
+          showToast("Missing booking route info for reschedule");
+          return;
+        }
+        const payload = await apiData(`/api/v1/bookings/${booking.id}/manage-token`, {
+          method: "POST",
+        });
+        const token = payload?.token;
+        if (!token) {
+          showToast("Could not open reschedule flow");
+          return;
+        }
+        const path = `/book/${encodeURIComponent(
+          booking.hostUsername
+        )}/${encodeURIComponent(
+          booking.eventSlug
+        )}?reschedule=1&bookingId=${encodeURIComponent(
+          booking.id
+        )}&token=${encodeURIComponent(token)}`;
+        if (typeof onNavigate === "function") {
+          onNavigate(path);
+        } else {
+          window.history.pushState({}, "", path);
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }
+      } else if (action === "edit-location") {
+        showToast("Edit location from the booking page flow.");
+      } else if (action === "add-guests") {
+        showToast("Additional guests can be added when booking.");
+      } else if (action === "view-recordings") {
+        showToast("Recordings are not available in this build.");
+      } else if (action === "view-session") {
+        showToast("Session details are not available in this build.");
+      } else if (action === "mark-no-show") {
+        showToast("No-show tracking is not available in this build.");
+      } else if (action === "report-booking") {
+        showToast("Thanks. Booking reported.");
+      } else if (action === "cancel-event") {
+        if (!window.confirm("Cancel this booking?")) return;
+        await apiData(`/api/v1/bookings/${booking.id}/cancel`, {
+          method: "POST",
+          json: { cancellationReason: "Cancelled from bookings menu" },
+        });
+        showToast("Cancelled");
+        await load();
+      }
     } catch (e) {
-      showToast(e.message || "Reschedule failed");
-    } finally {
-      setRescheduleBusy(false);
-    }
-  };
-
-  const isCancelled = (row) =>
-    (row.statusRaw || "").toUpperCase() === "CANCELLED";
-
-  const updateDurationForBooking = async (booking) => {
-    const next = durationDraft[booking.id] ?? booking.durationMinutes;
-    if (next === booking.durationMinutes) {
-      showToast("Already at this duration");
-      return;
-    }
-    setDurationBusyId(booking.id);
-    try {
-      await apiData(`/api/v1/bookings/${booking.id}`, {
-        method: "PATCH",
-        json: { durationMinutes: next },
-      });
-      showToast("Duration updated");
-      await load();
-    } catch (e) {
-      showToast(e.message || "Update failed");
-    } finally {
-      setDurationBusyId(null);
+      showToast(e.message || "Action failed");
     }
   };
 
   if (isLoading) {
     return (
-      <div className="flex-1 space-y-6">
-        <div className="flex flex-col gap-2">
-           <Skeleton className="h-8 w-48" />
-           <Skeleton className="h-4 w-72" />
-        </div>
-        <div className="flex gap-2">
-           <Skeleton className="h-10 w-64 rounded-xl" />
-           <Skeleton className="h-10 w-24 rounded-xl" />
-        </div>
-        <div className="border border-subtle rounded-xl divide-y divide-subtle overflow-hidden">
-           {[1, 2].map(i => (
-             <div key={i} className="p-6 flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                   <div className="flex flex-col items-center gap-1">
-                      <Skeleton className="h-4 w-8" />
-                      <Skeleton className="h-6 w-10" />
-                   </div>
-                   <div className="h-12 w-[1px] bg-subtle" />
-                   <div className="space-y-2">
-                      <Skeleton className="h-4 w-40" />
-                      <Skeleton className="h-3 w-60" />
-                   </div>
-                </div>
-                <Skeleton className="h-9 w-28 rounded-lg" />
-             </div>
-           ))}
-        </div>
+      <div className="flex-1 space-y-5 animate-pulse">
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-10 w-[460px] max-w-full rounded-lg" />
+        <Skeleton className="h-[220px] w-full rounded-xl" />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 lg:pr-6 animate-in fade-in duration-500">
-      <header className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2 sm:px-0">
-        <div>
-          <h1 className="font-cal text-2xl font-bold text-emphasis">Bookings</h1>
-          <p className="text-sm text-subtle">See upcoming and past events booked through your links.</p>
-        </div>
+    <div className="flex-1">
+      <header className="mb-5">
+        <h1 className="font-cal text-2xl font-bold text-emphasis">Bookings</h1>
+        <p className="mt-1 text-sm text-subtle">
+          See upcoming and past events booked through your event type links.
+        </p>
       </header>
 
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-6 px-2 sm:px-0">
-        <div className="bg-subtle p-0.5 rounded-lg flex items-center">
-           {TAB_OPTIONS.map(tab => (
-             <button
-               key={tab.value}
-               onClick={() => setActiveTab(tab.value)}
-               className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all ${
-                 activeTab === tab.value 
-                   ? "bg-default text-emphasis shadow-sm" 
-                   : "text-subtle hover:text-emphasis"
-               }`}
-             >
-               {tab.label}
-             </button>
-           ))}
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center rounded-lg border border-subtle bg-subtle/20 p-0.5">
+            {TAB_OPTIONS.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setActiveTab(tab.value)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                  activeTab === tab.value
+                    ? "bg-default text-emphasis"
+                    : "text-subtle hover:text-emphasis"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg border border-subtle px-3 py-2 text-sm text-emphasis hover:bg-subtle/30"
+          >
+            <Icon name="list-filter" className="h-4 w-4" />
+            Filter
+          </button>
         </div>
-        <div className="flex items-center gap-2">
-           <button className="flex items-center gap-2 px-3 py-1.5 border border-subtle rounded-lg text-sm font-semibold text-emphasis hover:bg-subtle transition">
-              <Icon name="list-filter" className="h-4 w-4" />
-              <span>Filter</span>
-           </button>
-        </div>
+
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-lg border border-subtle px-3 py-2 text-sm text-subtle hover:text-emphasis"
+        >
+          <Icon name="list-filter" className="h-4 w-4" />
+          Saved filters
+          <Icon name="chevron-down" className="h-3.5 w-3.5" />
+        </button>
       </div>
 
-      <div ref={parent} className="space-y-4">
-        {filteredBookings.length > 0 ? (
-          <div className="bg-default border border-subtle rounded-xl overflow-hidden divide-y divide-subtle shadow-sm">
-            {filteredBookings.map(booking => {
-              const badge = badgeFor(booking);
-              return (
-              <div key={booking.id} className="group p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between hover:bg-subtle/30 transition-colors gap-4">
-                <div className="flex items-center gap-6">
-                  <div className="flex flex-col items-center min-w-[52px]">
-                    <span className="text-[11px] font-bold text-subtle uppercase tracking-widest">{booking.month}</span>
-                    <span className="text-xl font-cal font-bold text-emphasis leading-none">{booking.date}</span>
-                    <span className="text-[11px] font-bold text-subtle uppercase mt-0.5">{booking.day}</span>
-                    <span
-                      className="mt-1.5 rounded-md bg-subtle px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-emphasis"
-                      title="Length of this booking"
-                    >
-                      {booking.durationMinutes} min
-                    </span>
-                  </div>
-                  
-                  <div className="h-10 w-[1px] bg-subtle" />
+      <section className="overflow-visible rounded-xl border border-subtle bg-default">
+        <div className="border-b border-subtle px-5 py-3 text-xs font-bold uppercase tracking-wide text-subtle">
+          Today
+        </div>
 
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                       <h3 className="text-sm font-bold text-emphasis truncate">{booking.time}</h3>
-                       <span className={badge.className}>{badge.label}</span>
-                    </div>
-                    <div className="flex flex-col gap-1 mt-1">
-                       <p className="text-sm text-subtle flex items-center gap-1.5 flex-wrap">
-                         <span className="font-bold text-emphasis">{booking.title}</span>
-                         <span>between {booking.user} and me</span>
-                       </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-3 w-full sm:items-end sm:w-auto min-w-0">
-                  {!isCancelled(booking) ? (
-                    <div className="flex flex-wrap items-center gap-2 w-full sm:justify-end">
-                      <label
-                        htmlFor={`duration-${booking.id}`}
-                        className="text-xs font-bold uppercase tracking-wide text-subtle whitespace-nowrap"
-                      >
-                        Duration
-                      </label>
-                      <select
-                        id={`duration-${booking.id}`}
-                        className="rounded-lg border border-subtle bg-default px-2.5 py-2 text-sm text-emphasis outline-none focus:border-emphasis min-w-[100px]"
-                        value={durationDraft[booking.id] ?? booking.durationMinutes}
-                        onChange={(e) =>
-                          setDurationDraft((d) => ({
-                            ...d,
-                            [booking.id]: Number(e.target.value),
-                          }))
-                        }
-                        disabled={durationBusyId === booking.id}
-                      >
-                        {booking.durationSelectOptions.map((m) => (
-                          <option key={m} value={m}>
-                            {m} min
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="px-3 py-2 rounded-lg border border-subtle text-sm font-bold text-emphasis hover:bg-subtle transition disabled:opacity-45 disabled:pointer-events-none"
-                        disabled={
-                          durationBusyId === booking.id ||
-                          (durationDraft[booking.id] ?? booking.durationMinutes) ===
-                            booking.durationMinutes
-                        }
-                        onClick={() => void updateDurationForBooking(booking)}
-                      >
-                        {durationBusyId === booking.id ? "Saving…" : "Update"}
-                      </button>
-                    </div>
-                  ) : null}
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <button
-                      type="button"
-                      className="flex-1 sm:flex-none px-4 py-2 border border-subtle rounded-lg text-sm font-bold text-emphasis hover:bg-subtle transition disabled:opacity-45"
-                      disabled={isCancelled(booking)}
-                      onClick={() => openReschedule(booking)}
-                    >
-                      Reschedule
-                    </button>
-                    <button
-                      type="button"
-                      className="p-2 border border-subtle rounded-lg text-subtle hover:bg-subtle transition disabled:opacity-45"
-                      disabled={isCancelled(booking)}
-                      onClick={async () => {
-                        if (!window.confirm("Cancel this booking?")) return;
-                        try {
-                          await apiData(`/api/v1/bookings/${booking.id}/cancel`, {
-                            method: "POST",
-                            json: { cancellationReason: "Cancelled from dashboard" },
-                          });
-                          showToast("Cancelled");
-                          await load();
-                        } catch (e) {
-                          showToast(e.message || "Cancel failed");
-                        }
-                      }}
-                    >
-                      <Icon name="ellipsis" className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
+        {bookings.length ? (
+          bookings.map((b) => (
+            <div
+              key={b.id}
+              className="relative flex items-start justify-between gap-4 border-b border-subtle px-5 py-6 last:border-b-0"
+            >
+              <div className="w-[150px] shrink-0 text-sm text-emphasis">
+                <p className="font-medium">{b.dateLabel}</p>
+                <p className="mt-1 text-subtle">{b.timeLabel}</p>
+                <a
+                  href={b.linkHref || "#"}
+                  className="mt-1 inline-flex items-center gap-1 text-blue-400 hover:underline"
+                >
+                  <Icon name="video" className="h-3.5 w-3.5" />
+                  {b.linkLabel}
+                </a>
               </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center p-12 sm:p-24 border border-dashed border-subtle rounded-xl bg-default text-center">
-            <div className="h-16 w-16 bg-subtle rounded-full flex items-center justify-center mb-6">
-               <Icon name="calendar" className="h-8 w-8 text-subtle" />
+
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-semibold text-emphasis">
+                  {b.title} between {b.guest} and {b.guest}
+                </p>
+                <p className="mt-1 text-subtle">You and Priyanshu</p>
+              </div>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-subtle text-subtle hover:bg-subtle/40"
+                  title="Booking actions"
+                  onClick={() =>
+                    setMenuOpenId((prev) => (prev === b.id ? null : b.id))
+                  }
+                >
+                  <Icon name="ellipsis" className="h-4 w-4" />
+                </button>
+
+                {menuOpenId === b.id ? (
+                  <div
+                    ref={menuRef}
+                    className="absolute right-0 top-full mt-2 z-50 w-[260px] overflow-hidden rounded-2xl border border-subtle bg-default shadow-2xl"
+                  >
+                  <button onClick={() => void handleMenuAction(b, "edit-event")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-emphasis hover:bg-subtle/30">
+                    <Icon name="pencil" className="h-4 w-4 text-subtle" />
+                    Edit event
+                  </button>
+                  <button onClick={() => void handleMenuAction(b, "reschedule")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-emphasis hover:bg-subtle/30">
+                    <Icon name="refresh-cw" className="h-4 w-4 text-subtle" />
+                    Reschedule booking
+                  </button>
+                  <button onClick={() => void handleMenuAction(b, "edit-location")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-emphasis hover:bg-subtle/30">
+                    <Icon name="globe" className="h-4 w-4 text-subtle" />
+                    Edit location
+                  </button>
+                  <button onClick={() => void handleMenuAction(b, "add-guests")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-emphasis hover:bg-subtle/30">
+                    <Icon name="users" className="h-4 w-4 text-subtle" />
+                    Add guests
+                  </button>
+                  <div className="border-t border-subtle px-4 py-2 text-xs font-semibold uppercase tracking-wide text-subtle">
+                    After event
+                  </div>
+                  <button onClick={() => void handleMenuAction(b, "view-recordings")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-subtle hover:bg-subtle/30">
+                    <Icon name="video" className="h-4 w-4 text-subtle" />
+                    View recordings
+                  </button>
+                  <button onClick={() => void handleMenuAction(b, "view-session")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-subtle hover:bg-subtle/30">
+                    <Icon name="info" className="h-4 w-4 text-subtle" />
+                    View session details
+                  </button>
+                  <button onClick={() => void handleMenuAction(b, "mark-no-show")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-subtle hover:bg-subtle/30">
+                    <Icon name="calendar-off" className="h-4 w-4 text-subtle" />
+                    Mark as no-show
+                  </button>
+                  <div className="border-t border-subtle" />
+                  <button onClick={() => void handleMenuAction(b, "report-booking")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-emphasis hover:bg-subtle/30">
+                    <Icon name="message-square" className="h-4 w-4 text-subtle" />
+                    Report booking
+                  </button>
+                  <div className="border-t border-subtle" />
+                  <button onClick={() => void handleMenuAction(b, "cancel-event")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-emphasis hover:bg-subtle/30">
+                    <Icon name="trash" className="h-4 w-4 text-subtle" />
+                    Cancel event
+                  </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
-            <h2 className="text-xl font-cal font-bold text-emphasis mb-2">You have no {activeTab} bookings</h2>
-            <p className="text-subtle text-sm max-w-xs leading-relaxed">
-               As soon as someone books a time with you it will show up here.
-            </p>
+          ))
+        ) : (
+          <div className="px-5 py-16 text-center text-sm text-subtle">
+            No bookings for this tab.
           </div>
         )}
-      </div>
 
-      {rescheduleOpen ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-[2px] animate-in fade-in duration-200"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="reschedule-title"
-          onClick={() => !rescheduleBusy && setRescheduleOpen(null)}
-        >
-          <div
-            className="w-full max-w-md bg-default border border-subtle rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-5 border-b border-subtle">
-              <h3 id="reschedule-title" className="font-cal text-lg font-bold text-emphasis">
-                Reschedule
-              </h3>
-              <p className="text-sm text-subtle mt-1">
-                {rescheduleOpen.title} · {rescheduleOpen.user}
-              </p>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wide text-subtle block">
-                  New start (your local time)
-                </label>
-                <input
-                  type="datetime-local"
-                  className="w-full rounded-lg border border-subtle bg-default px-3 py-2.5 text-sm text-emphasis outline-none focus:border-emphasis"
-                  value={rescheduleFormStart}
-                  onChange={(e) => setRescheduleFormStart(e.target.value)}
-                />
-              </div>
-              <p className="text-xs text-subtle leading-relaxed">
-                To change how long the meeting runs, use{" "}
-                <span className="font-semibold text-emphasis">Duration</span> on
-                the booking row and click Update.
-              </p>
-            </div>
-            <div className="px-6 py-4 bg-muted/20 border-t border-subtle flex justify-end gap-3">
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={rescheduleBusy}
-                onClick={() => setRescheduleOpen(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={rescheduleBusy}
-                onClick={() => void submitReschedule()}
-              >
-                {rescheduleBusy ? "Saving…" : "Save"}
-              </button>
-            </div>
+        <div className="flex items-center justify-between bg-subtle/20 px-5 py-2.5 text-sm text-subtle">
+          <div className="inline-flex items-center gap-2">
+            <select className="rounded-md border border-subtle bg-default px-2 py-1 text-sm text-emphasis outline-none">
+              <option>10</option>
+              <option>25</option>
+              <option>50</option>
+            </select>
+            rows per page
+          </div>
+          <div className="inline-flex items-center gap-2">
+            <span>1-1 of {bookings.length}</span>
+            <button className="inline-flex h-6 w-6 items-center justify-center rounded border border-subtle opacity-50" type="button">
+              <Icon name="chevron-left" className="h-3 w-3" />
+            </button>
+            <button className="inline-flex h-6 w-6 items-center justify-center rounded border border-subtle opacity-50" type="button">
+              <Icon name="chevron-right" className="h-3 w-3" />
+            </button>
           </div>
         </div>
-      ) : null}
+      </section>
 
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] bg-emphasis text-inverted px-4 py-2 rounded-lg shadow-2xl text-sm font-semibold">
+      {toast ? (
+        <div className="fixed bottom-6 left-1/2 z-[200] -translate-x-1/2 rounded-lg bg-emphasis px-4 py-2 text-sm font-semibold text-inverted shadow-2xl">
           {toast}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

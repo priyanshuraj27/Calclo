@@ -1,13 +1,18 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import crypto from "crypto";
 import { Booking } from "../models/booking.models.js";
 import { EventType } from "../models/eventType.models.js";
+import { BookingToken } from "../models/bookingToken.models.js";
 import { BOOKING_STATUS } from "../constants/scheduling.constants.js";
+import { BOOKING_TOKEN_PURPOSE } from "../constants/scheduling.constants.js";
 import { hasOverlap } from "../services/slotGeneration.service.js";
 import { resolveDurationMinutesForRequest } from "../utils/eventTypeDuration.util.js";
 
 const activeStatuses = [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE];
+const hashToken = (raw) =>
+  crypto.createHash("sha256").update(raw, "utf8").digest("hex");
 
 const tabFilter = (tab) => {
   const now = new Date();
@@ -197,4 +202,38 @@ export const updateBookingDuration = asyncHandler(async (req, res) => {
   return res
     .status(200)
     .json(new ApiResponse(200, "Duration updated", booking));
+});
+
+/**
+ * Creates a short-lived public manage token for host-triggered reschedule flow.
+ * Frontend can redirect to /book/:host/:slug?reschedule=1&bookingId=...&token=...
+ */
+export const createMyBookingManageToken = asyncHandler(async (req, res) => {
+  const booking = await Booking.findOne({
+    _id: req.params.bookingId,
+    hostUserId: req.user._id,
+  });
+  if (!booking) throw new ApiError(404, "Booking not found");
+  if (booking.status === BOOKING_STATUS.CANCELLED) {
+    throw new ApiError(400, "Cannot manage a cancelled booking");
+  }
+  if (booking.status === BOOKING_STATUS.RESCHEDULED) {
+    throw new ApiError(400, "This booking was already rescheduled");
+  }
+
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  await BookingToken.deleteMany({
+    bookingId: booking._id,
+    purpose: BOOKING_TOKEN_PURPOSE.CONFIRMATION,
+  });
+  await BookingToken.create({
+    bookingId: booking._id,
+    tokenHash: hashToken(rawToken),
+    purpose: BOOKING_TOKEN_PURPOSE.CONFIRMATION,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Manage token created", { token: rawToken }));
 });
