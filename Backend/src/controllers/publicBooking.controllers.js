@@ -89,6 +89,8 @@ export const getPublicSlots = asyncHandler(async (req, res) => {
   if (result.notFound) throw new ApiError(404, "Event not found");
   if (result.invalidDate) throw new ApiError(400, "Invalid date");
 
+  // Prevent stale availability in browsers/proxies for public booking pages.
+  res.set("Cache-Control", "no-store");
   return res.status(200).json(new ApiResponse(200, "OK", { slots: result.slots }));
 });
 

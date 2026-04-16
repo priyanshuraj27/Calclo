@@ -102,8 +102,15 @@ export function hasOverlap(blockedStart, blockedEnd, bookings) {
   return bookings.some((b) => {
     if (![BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE].includes(b.status))
       return false;
-    const bss = toUtcMillis(b.blockedStartAt);
-    const bee = toUtcMillis(b.blockedEndAt);
+    // Fall back to start/end for legacy rows that don't have blocked windows.
+    const blockedStartMs = toUtcMillis(b.blockedStartAt);
+    const blockedEndMs = toUtcMillis(b.blockedEndAt);
+    const bss = Number.isFinite(blockedStartMs)
+      ? blockedStartMs
+      : toUtcMillis(b.startAt);
+    const bee = Number.isFinite(blockedEndMs)
+      ? blockedEndMs
+      : toUtcMillis(b.endAt);
     if (!Number.isFinite(bss) || !Number.isFinite(bee)) return false;
     return bss < be && bee > bs;
   });
@@ -177,15 +184,24 @@ export async function getSlotsForPublicEvent({
     windowEnd
   );
 
-  const dayStartUtc = selectedDay.toUTC().startOf("day").toJSDate();
-  const dayEndUtc = selectedDay.toUTC().endOf("day").toJSDate();
+  // Keep the selected local day boundaries, then convert those exact instants to UTC.
+  const dayStartUtc = selectedDay.startOf("day").toUTC().toJSDate();
+  const dayEndUtc = selectedDay.endOf("day").toUTC().toJSDate();
 
   const conflicts = await prisma.booking.findMany({
     where: {
       hostUserId: host._id,
       status: { in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE] },
-      blockedStartAt: { lt: dayEndUtc },
-      blockedEndAt: { gt: dayStartUtc },
+      OR: [
+        {
+          blockedStartAt: { lt: dayEndUtc },
+          blockedEndAt: { gt: dayStartUtc },
+        },
+        {
+          startAt: { lt: dayEndUtc },
+          endAt: { gt: dayStartUtc },
+        },
+      ],
     },
   });
 
