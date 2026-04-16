@@ -8,10 +8,17 @@ import { BOOKING_TOKEN_PURPOSE } from "../constants/scheduling.constants.js";
 import { hasOverlap } from "../services/slotGeneration.service.js";
 import { resolveDurationMinutesForRequest } from "../utils/eventTypeDuration.util.js";
 import { withMongoId } from "../utils/prismaNormalize.util.js";
+import { sendBookingCancelledEmail } from "../services/email.service.js";
 
 const activeStatuses = [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE];
 const hashToken = (raw) =>
   crypto.createHash("sha256").update(raw, "utf8").digest("hex");
+
+function queueEmail(fn) {
+  void Promise.resolve()
+    .then(fn)
+    .catch((err) => console.error("[email]", err?.message || err));
+}
 
 const tabFilter = (tab) => {
   const now = new Date();
@@ -71,6 +78,7 @@ export const cancelMyBooking = asyncHandler(async (req, res) => {
   const { cancellationReason } = req.body;
   const doc = await prisma.booking.findFirst({
     where: { id: req.params.bookingId, hostUserId: req.user._id },
+    include: { eventType: { select: { title: true } } },
   });
   if (!doc) throw new ApiError(404, "Booking not found");
   if (doc.status === BOOKING_STATUS.CANCELLED) {
@@ -83,6 +91,17 @@ export const cancelMyBooking = asyncHandler(async (req, res) => {
       cancellationReason: cancellationReason ?? "",
     },
   });
+
+  queueEmail(() =>
+    sendBookingCancelledEmail({
+      bookerEmail: doc.bookerEmail,
+      bookerName: doc.bookerName,
+      eventTitle: doc.eventType?.title || "Meeting",
+      startAt: doc.startAt,
+      guestEmails: [...(doc.guestEmails || [])],
+    })
+  );
+
   return res
     .status(200)
     .json(new ApiResponse(200, "Booking cancelled", withMongoId(updated)));

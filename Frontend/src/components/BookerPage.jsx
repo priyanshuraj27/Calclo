@@ -602,7 +602,8 @@ export function BookerPage({
   const loadEvent = useCallback(async () => {
     try {
       const data = await apiData(
-        `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}`
+        `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}`,
+        { noCache: true }
       );
       const name = data.host?.fullName || data.host?.username || "Host";
       const initial = (name || "H").trim().charAt(0).toLowerCase();
@@ -650,7 +651,8 @@ export function BookerPage({
       setRescheduleLoadError(null);
       try {
         const data = await apiData(
-          `/api/v1/public/bookings/${encodeURIComponent(bid)}/confirmation?token=${encodeURIComponent(tok)}`
+          `/api/v1/public/bookings/${encodeURIComponent(bid)}/confirmation?token=${encodeURIComponent(tok)}`,
+          { noCache: true }
         );
         if (cancelled) return;
         const b = data.booking;
@@ -705,7 +707,8 @@ export function BookerPage({
           durationMinutes: String(prevMin),
         });
         const slotsData = await apiData(
-          `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}/slots?${slotQ.toString()}`
+          `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}/slots?${slotQ.toString()}`,
+          { noCache: true }
         );
         if (cancelled) return;
         const slots = slotsData?.slots || [];
@@ -739,7 +742,8 @@ export function BookerPage({
           durationMinutes: String(durationMinutes),
         });
         const data = await apiData(
-          `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}/slots?${q.toString()}`
+          `/api/v1/public/hosts/${encodeURIComponent(hostUsername)}/events/${encodeURIComponent(eventSlug)}/slots?${q.toString()}`,
+          { noCache: true }
         );
         const nowMs = Date.now();
         const slots = (data?.slots || []).filter((s) => {

@@ -8,6 +8,7 @@ import {
   availabilityToWeeklyRules,
   summarizeAvailabilitySubtitle,
 } from "../api/scheduleMappers.js";
+import { toAmPmFrom24, fromAmPmTo24 } from "../api/timeFormat.js";
 
 const isPersistedId = (id) => {
   const value = String(id || "").trim();
@@ -35,11 +36,66 @@ const SCHEDULE_TIMEZONES = [
   "Pacific/Auckland",
 ];
 
+const TIME_OPTIONS = Array.from({ length: 24 * 4 }, (_v, idx) => {
+  const hours = Math.floor(idx / 4);
+  const minutes = (idx % 4) * 15;
+  const hm24 = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  return {
+    value: toAmPmFrom24(hm24),
+    label: toAmPmFrom24(hm24),
+  };
+});
+
+const OVERRIDE_TYPE = {
+  CLOSED: "CLOSED",
+  CUSTOM_HOURS: "CUSTOM_HOURS",
+};
+
+const ymdLocal = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+
+const monthLabel = (date) =>
+  date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+const formatOverrideDate = (ymd) => {
+  const [y, m, d] = String(ymd).split("-").map(Number);
+  const dt = new Date(y, (m || 1) - 1, d || 1);
+  return dt.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+};
+
+const formatOverrideTime = (intervals) => {
+  const first = Array.isArray(intervals) ? intervals[0] : null;
+  if (!first?.start || !first?.end) return "";
+  return `${toAmPmFrom24(first.start)} - ${toAmPmFrom24(first.end)}`;
+};
+
+const monthGridCells = (monthDate) => {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const first = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const startPad = first.getDay();
+  const cells = [];
+  for (let i = 0; i < startPad; i++) cells.push(null);
+  for (let d = 1; d <= lastDay; d++) {
+    cells.push(ymdLocal(new Date(year, month, d)));
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+};
+
 /**
  * Pixel-perfect replica of the Cal.com Schedule Editor page based on the provided screenshot.
  */
 export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
   const [parent] = useAutoAnimate();
+  const [isSaving, setIsSaving] = useState(false);
   const [title, setTitle] = useState(initialName || "Working hours");
   const [timezone, setTimezone] = useState("Europe/London");
   const [isDefault, setIsDefault] = useState(false);
@@ -48,6 +104,15 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
   const [eventTypeChoices, setEventTypeChoices] = useState([]);
   const [selectedEventTypeIds, setSelectedEventTypeIds] = useState([]);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [overrides, setOverrides] = useState([]);
+  const [overrideModalOpen, setOverrideModalOpen] = useState(false);
+  const [overrideMonth, setOverrideMonth] = useState(() => new Date());
+  const [overrideSelectedDates, setOverrideSelectedDates] = useState([]);
+  const [overrideFrom, setOverrideFrom] = useState("9:00am");
+  const [overrideTo, setOverrideTo] = useState("5:00pm");
+  const [overrideUnavailable, setOverrideUnavailable] = useState(false);
+  const [editingOverrideId, setEditingOverrideId] = useState(null);
+  const [isSavingOverride, setIsSavingOverride] = useState(false);
   const skipSave = useRef(true);
   const [copyModal, setCopyModal] = useState({
     open: false,
@@ -128,6 +193,25 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
       cancelled = true;
     };
   }, [scheduleId]);
+
+  const loadOverrides = useCallback(async () => {
+    if (!isPersistedId(scheduleId)) {
+      setOverrides([]);
+      return;
+    }
+    try {
+      const rows = await apiData(`/api/v1/schedules/${scheduleId}/overrides`, {
+        noCache: true,
+      });
+      setOverrides(Array.isArray(rows) ? rows : []);
+    } catch {
+      setOverrides([]);
+    }
+  }, [scheduleId]);
+
+  useEffect(() => {
+    void loadOverrides();
+  }, [loadOverrides]);
 
   useEffect(() => {
     if (scheduleId === "new" || !isPersistedId(scheduleId)) return;
@@ -262,11 +346,21 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
     closeCopyModal();
   };
 
+  const redirectToAvailability = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.location.replace("/availability");
+      return;
+    }
+    onNavigate("/availability");
+  }, [onNavigate]);
+
   const handleSaveClick = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
     if (scheduleId === "new") {
       try {
         const weeklyRules = availabilityToWeeklyRules(availability);
-        const created = await apiData("/api/v1/schedules", {
+        await apiData("/api/v1/schedules", {
           method: "POST",
           json: {
             name: title,
@@ -275,13 +369,18 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
             weeklyRules,
           },
         });
-        onNavigate(`/availability/${created._id}`);
+        redirectToAvailability();
       } catch {
         /* keep UI */
+      } finally {
+        setIsSaving(false);
       }
       return;
     }
-    if (!isPersistedId(scheduleId)) return;
+    if (!isPersistedId(scheduleId)) {
+      setIsSaving(false);
+      return;
+    }
     try {
       await apiData(`/api/v1/schedules/${scheduleId}`, {
         method: "PATCH",
@@ -292,8 +391,11 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
           weeklyRules: availabilityToWeeklyRules(availability),
         },
       });
+      redirectToAvailability();
     } catch {
       /* noop */
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -382,6 +484,90 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
     }
   };
 
+  const openAddOverrideModal = () => {
+    const today = new Date();
+    setEditingOverrideId(null);
+    setOverrideSelectedDates([ymdLocal(today)]);
+    setOverrideMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setOverrideUnavailable(false);
+    setOverrideFrom("9:00am");
+    setOverrideTo("5:00pm");
+    setOverrideModalOpen(true);
+  };
+
+  const openEditOverrideModal = (ovr) => {
+    const date = String(ovr?.date || "");
+    const [y, m] = date.split("-").map(Number);
+    if (y && m) {
+      setOverrideMonth(new Date(y, m - 1, 1));
+    }
+    setEditingOverrideId(String(ovr?._id || ""));
+    setOverrideSelectedDates(date ? [date] : []);
+    if (ovr?.type === OVERRIDE_TYPE.CLOSED) {
+      setOverrideUnavailable(true);
+      setOverrideFrom("9:00am");
+      setOverrideTo("5:00pm");
+    } else {
+      const first = Array.isArray(ovr?.intervals) ? ovr.intervals[0] : null;
+      setOverrideUnavailable(false);
+      setOverrideFrom(toAmPmFrom24(first?.start || "09:00"));
+      setOverrideTo(toAmPmFrom24(first?.end || "17:00"));
+    }
+    setOverrideModalOpen(true);
+  };
+
+  const closeOverrideModal = () => {
+    setOverrideModalOpen(false);
+    setEditingOverrideId(null);
+    setOverrideSelectedDates([]);
+  };
+
+  const toggleOverrideDate = (dateStr) => {
+    if (!dateStr) return;
+    setOverrideSelectedDates((prev) =>
+      prev.includes(dateStr) ? prev.filter((d) => d !== dateStr) : [...prev, dateStr]
+    );
+  };
+
+  const saveOverride = async () => {
+    if (!isPersistedId(scheduleId) || !overrideSelectedDates.length) return;
+    setIsSavingOverride(true);
+    try {
+      const payload = overrideUnavailable
+        ? { type: OVERRIDE_TYPE.CLOSED, intervals: [] }
+        : {
+            type: OVERRIDE_TYPE.CUSTOM_HOURS,
+            intervals: [{ start: fromAmPmTo24(overrideFrom), end: fromAmPmTo24(overrideTo) }],
+          };
+      await Promise.all(
+        overrideSelectedDates.map((date) =>
+          apiData(`/api/v1/schedules/${scheduleId}/overrides`, {
+            method: "POST",
+            json: { date, ...payload },
+          })
+        )
+      );
+      await loadOverrides();
+      closeOverrideModal();
+    } catch {
+      // keep modal open for retry
+    } finally {
+      setIsSavingOverride(false);
+    }
+  };
+
+  const deleteOverrideItem = async (overrideId) => {
+    if (!isPersistedId(scheduleId) || !overrideId) return;
+    try {
+      await apiData(`/api/v1/schedules/${scheduleId}/overrides/${overrideId}`, {
+        method: "DELETE",
+      });
+      await loadOverrides();
+    } catch {
+      // noop
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-default text-default animate-in fade-in duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 sm:px-8 py-4 sm:py-6 sticky top-0 bg-default/80 backdrop-blur-md z-50 border-b border-subtle sm:border-none gap-4">
@@ -424,9 +610,10 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
               <button
                 type="button"
                 onClick={handleSaveClick}
+                disabled={isSaving}
                 className="btn-primary min-h-[36px] px-5 py-2"
               >
-                Save
+                {isSaving ? "Saving..." : "Save"}
               </button>
            </div>
         </div>
@@ -453,23 +640,57 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
                           {(slots || []).map((slot, index) => (
                             <div key={`${day}-${index}`} className="flex items-center gap-2">
                               <div className="flex items-center bg-muted/30 border border-subtle rounded-lg px-3 py-1.5 text-sm gap-2">
-                                <input
-                                  type="text"
-                                  className="w-16 bg-transparent outline-none font-medium text-emphasis"
-                                  value={slot?.from || "9:00am"}
-                                  onChange={(e) =>
-                                    updateSlotAt(day, index, "from", e.target.value)
-                                  }
-                                />
+                                <div className="relative">
+                                  <select
+                                    className="w-24 appearance-none bg-transparent pr-5 outline-none font-medium text-emphasis"
+                                    style={{ colorScheme: "dark" }}
+                                    value={slot?.from || "9:00am"}
+                                    onChange={(e) =>
+                                      updateSlotAt(day, index, "from", e.target.value)
+                                    }
+                                    aria-label={`${day} start time`}
+                                  >
+                                    {TIME_OPTIONS.map((opt) => (
+                                      <option
+                                        key={`from-${opt.value}`}
+                                        value={opt.value}
+                                        className="bg-[#141414] text-[#e5e5e5]"
+                                      >
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <Icon
+                                    name="chevron-down"
+                                    className="pointer-events-none absolute right-0.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-subtle"
+                                  />
+                                </div>
                                 <span className="text-subtle">–</span>
-                                <input
-                                  type="text"
-                                  className="w-16 bg-transparent outline-none font-medium text-emphasis"
-                                  value={slot?.to || "5:00pm"}
-                                  onChange={(e) =>
-                                    updateSlotAt(day, index, "to", e.target.value)
-                                  }
-                                />
+                                <div className="relative">
+                                  <select
+                                    className="w-24 appearance-none bg-transparent pr-5 outline-none font-medium text-emphasis"
+                                    style={{ colorScheme: "dark" }}
+                                    value={slot?.to || "5:00pm"}
+                                    onChange={(e) =>
+                                      updateSlotAt(day, index, "to", e.target.value)
+                                    }
+                                    aria-label={`${day} end time`}
+                                  >
+                                    {TIME_OPTIONS.map((opt) => (
+                                      <option
+                                        key={`to-${opt.value}`}
+                                        value={opt.value}
+                                        className="bg-[#141414] text-[#e5e5e5]"
+                                      >
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <Icon
+                                    name="chevron-down"
+                                    className="pointer-events-none absolute right-0.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-subtle"
+                                  />
+                                </div>
                               </div>
                               <button
                                 type="button"
@@ -517,7 +738,50 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
                <p className="text-sm text-subtle leading-relaxed">
                  Add dates when your availability changes from your daily hours.
                </p>
-               <button type="button" className="flex items-center gap-2 px-4 py-2 border border-subtle rounded-lg text-sm font-bold text-emphasis hover:bg-subtle transition">
+               {overrides.length ? (
+                 <div className="overflow-hidden rounded-lg border border-subtle">
+                   {overrides.map((ovr) => (
+                     <div
+                       key={ovr._id}
+                       className="flex items-center justify-between border-b border-subtle px-4 py-3 last:border-b-0"
+                     >
+                       <div>
+                         <p className="text-sm font-semibold text-emphasis">
+                           {formatOverrideDate(ovr.date)}
+                         </p>
+                         <p className="text-sm text-subtle">
+                           {ovr.type === OVERRIDE_TYPE.CLOSED
+                             ? "Unavailable"
+                             : formatOverrideTime(ovr.intervals)}
+                         </p>
+                       </div>
+                       <div className="flex items-center gap-2">
+                         <button
+                           type="button"
+                           className="p-2 hover:bg-subtle rounded-md text-subtle transition"
+                           title="Delete override"
+                           onClick={() => deleteOverrideItem(ovr._id)}
+                         >
+                           <Icon name="trash" className="h-4 w-4" />
+                         </button>
+                         <button
+                           type="button"
+                           className="p-2 hover:bg-subtle rounded-md text-subtle transition"
+                           title="Edit override"
+                           onClick={() => openEditOverrideModal(ovr)}
+                         >
+                           <Icon name="pencil" className="h-4 w-4" />
+                         </button>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               ) : null}
+               <button
+                 type="button"
+                 onClick={openAddOverrideModal}
+                 className="flex items-center gap-2 px-4 py-2 border border-subtle rounded-lg text-sm font-bold text-emphasis hover:bg-subtle transition"
+               >
                   <Icon name="plus" className="h-4 w-4" />
                   Add an override
                </button>
@@ -566,6 +830,129 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
             <Icon name="message-square" className="h-6 w-6" />
          </button>
       </div>
+
+      {overrideModalOpen ? (
+        <div className="fixed inset-0 z-[230] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/55 backdrop-blur-[1px]"
+            onClick={closeOverrideModal}
+          />
+          <div className="relative w-full max-w-[880px] overflow-hidden rounded-2xl border border-subtle bg-[#0e0e0f] shadow-2xl">
+            <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1fr]">
+              <div className="border-b border-subtle p-6 md:border-b-0 md:border-r">
+                <h3 className="text-xl font-semibold text-emphasis">Select the dates to override</h3>
+                <div className="mt-5 flex items-center justify-between">
+                  <p className="text-lg font-semibold text-emphasis">{monthLabel(overrideMonth)}</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOverrideMonth(
+                          new Date(overrideMonth.getFullYear(), overrideMonth.getMonth() - 1, 1)
+                        )
+                      }
+                      className="rounded-md p-1.5 text-subtle hover:bg-subtle"
+                    >
+                      <Icon name="chevron-left" className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOverrideMonth(
+                          new Date(overrideMonth.getFullYear(), overrideMonth.getMonth() + 1, 1)
+                        )
+                      }
+                      className="rounded-md p-1.5 text-subtle hover:bg-subtle"
+                    >
+                      <Icon name="chevron-right" className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs font-bold uppercase text-subtle">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                    <div key={d}>{d}</div>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-7 gap-2">
+                  {monthGridCells(overrideMonth).map((cell, idx) =>
+                    cell ? (
+                      <button
+                        key={cell}
+                        type="button"
+                        onClick={() => toggleOverrideDate(cell)}
+                        className={`h-9 rounded-lg text-sm font-medium transition ${
+                          overrideSelectedDates.includes(cell)
+                            ? "bg-[#6a6a6d] text-white"
+                            : "bg-transparent text-emphasis hover:bg-subtle"
+                        }`}
+                      >
+                        {Number(cell.slice(-2))}
+                      </button>
+                    ) : (
+                      <div key={`empty-${idx}`} className="h-9" />
+                    )
+                  )}
+                </div>
+              </div>
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-emphasis">Which hours are you free?</h3>
+                <div className="mt-4 flex items-center gap-2 rounded-lg border border-subtle bg-muted/20 px-3 py-2">
+                  <select
+                    className="w-24 appearance-none bg-transparent outline-none font-medium text-emphasis"
+                    style={{ colorScheme: "dark" }}
+                    value={overrideFrom}
+                    onChange={(e) => setOverrideFrom(e.target.value)}
+                  >
+                    {TIME_OPTIONS.map((opt) => (
+                      <option key={`override-from-${opt.value}`} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-subtle">-</span>
+                  <select
+                    className="w-24 appearance-none bg-transparent outline-none font-medium text-emphasis"
+                    style={{ colorScheme: "dark" }}
+                    value={overrideTo}
+                    onChange={(e) => setOverrideTo(e.target.value)}
+                    disabled={overrideUnavailable}
+                  >
+                    {TIME_OPTIONS.map((opt) => (
+                      <option key={`override-to-${opt.value}`} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <label className="mt-4 flex items-center gap-3 text-sm text-emphasis">
+                  <Switch
+                    checked={overrideUnavailable}
+                    onChange={(next) => setOverrideUnavailable(Boolean(next))}
+                  />
+                  <span>Mark unavailable (All day)</span>
+                </label>
+                <div className="mt-16 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={closeOverrideModal}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={saveOverride}
+                    disabled={isSavingOverride || overrideSelectedDates.length === 0}
+                  >
+                    {isSavingOverride ? "Saving..." : editingOverrideId ? "Save override" : "Save override"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showBulkDefaultModal ? (
         <div className="fixed inset-0 z-[220] flex items-center justify-center p-4">
