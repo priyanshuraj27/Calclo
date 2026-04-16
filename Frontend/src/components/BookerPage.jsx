@@ -10,6 +10,7 @@ import {
   MEETING_WHERE_OPTIONS,
   resolveBookingWhereParts,
 } from "../utils/meetingWhere.js";
+import { formatPageTitle } from "../utils/documentTitle.js";
 
 const FIXED_BOOKING_TZ = "Asia/Kolkata";
 
@@ -631,6 +632,14 @@ export function BookerPage({
   useEffect(() => {
     loadEvent();
   }, [loadEvent]);
+
+  useEffect(() => {
+    const t = event?.title?.trim();
+    document.title = formatPageTitle(t || "Book a time");
+    return () => {
+      document.title = formatPageTitle(null);
+    };
+  }, [event.title]);
 
   useEffect(() => {
     let cancelled = false;

@@ -4,12 +4,23 @@ import { Icon } from './Icon';
 export function MobileTopBar({ onNavigate }) {
   return (
     <header className="flex md:hidden items-center justify-between px-4 py-3 bg-default border-b border-subtle sticky top-0 z-[100]">
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-full bg-emphasis flex items-center justify-center text-default font-bold text-xs">
-          C
-        </div>
-        <span className="font-cal font-bold text-lg">Cal.com</span>
-      </div>
+      <button
+        type="button"
+        onClick={() => onNavigate("/event-types")}
+        className="flex items-center gap-2 rounded-lg p-0.5 -m-0.5 hover:bg-subtle/60 transition-colors text-left"
+        aria-label="Go to event types"
+      >
+        <img
+          src="/app-icons/cal-com-icon.svg"
+          alt=""
+          width={32}
+          height={32}
+          className="h-8 w-8 shrink-0"
+          decoding="async"
+          aria-hidden
+        />
+        <span className="font-cal font-bold text-lg text-emphasis">Cal.com</span>
+      </button>
       
       <button 
         onClick={() => onNavigate('/settings/my-account/profile')}

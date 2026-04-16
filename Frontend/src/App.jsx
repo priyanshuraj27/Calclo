@@ -17,6 +17,33 @@ import { ReferPage } from "./components/ReferPage";
 import { EditEventTypePage } from "./components/EditEventTypePage";
 import { MobileTopBar, MobileBottomNav } from "./components/MobileNav";
 import { apiData } from "./api/client.js";
+import { titleForAppPath } from "./utils/documentTitle.js";
+
+const RESERVED_TOP_LEVEL_ROUTES = new Set([
+  "book",
+  "event-types",
+  "bookings",
+  "availability",
+  "teams",
+  "apps",
+  "routing",
+  "workflows",
+  "insights",
+  "refer",
+  "settings",
+  "api",
+]);
+
+function isPublicBookerPath(pathname) {
+  const pathParts = pathname.split("/").filter(Boolean);
+  const isShortPublicBookingRoute =
+    pathParts.length >= 2 && !RESERVED_TOP_LEVEL_ROUTES.has(pathParts[0]);
+  return (
+    pathname === "/book" ||
+    pathname.startsWith("/book/") ||
+    isShortPublicBookingRoute
+  );
+}
 
 function App() {
   // Simple routing simulation
@@ -47,6 +74,12 @@ function App() {
     apiData("/api/v1/users/current-user").catch(() => {});
     apiData("/api/v1/schedules").catch(() => {});
   }, []);
+
+  // Browser tab title (public booker sets its own in BookerPage).
+  useEffect(() => {
+    if (isPublicBookerPath(currentPath)) return;
+    document.title = titleForAppPath(currentPath, navSearch);
+  }, [currentPath, navSearch]);
 
   const navigate = (path) => {
     window.history.pushState({}, "", path);
@@ -135,28 +168,10 @@ function App() {
   };
 
   const pathParts = currentPath.split("/").filter(Boolean);
-  const reservedTopLevelRoutes = new Set([
-    "book",
-    "event-types",
-    "bookings",
-    "availability",
-    "teams",
-    "apps",
-    "routing",
-    "workflows",
-    "insights",
-    "refer",
-    "settings",
-    "api",
-  ]);
   const isShortPublicBookingRoute =
-    pathParts.length >= 2 && !reservedTopLevelRoutes.has(pathParts[0]);
+    pathParts.length >= 2 && !RESERVED_TOP_LEVEL_ROUTES.has(pathParts[0]);
 
-  if (
-    currentPath === "/book" ||
-    currentPath.startsWith("/book/") ||
-    isShortPublicBookingRoute
-  ) {
+  if (isPublicBookerPath(currentPath)) {
     const parts = currentPath.split("/").filter(Boolean);
     const defaultHost =
       import.meta.env.VITE_DEFAULT_HOST_USERNAME || "priyanshu";
