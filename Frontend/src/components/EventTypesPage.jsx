@@ -49,7 +49,8 @@ export function EventTypesPage({ onNavigate }) {
   };
 
   const publicBookingBase = (
-    import.meta.env.VITE_PUBLIC_BOOKING_BASE_URL || "https://calclo.priyanshu.tech"
+    import.meta.env.VITE_PUBLIC_BOOKING_BASE_URL ||
+    "https://calclo.bepriyanshu.tech"
   ).replace(/\/$/, "");
   const buildPublicBookingLink = (host, slug) =>
     `${publicBookingBase}/${encodeURIComponent(host)}/${encodeURIComponent(slug)}`;

@@ -214,7 +214,8 @@ export function EditEventTypePage({
     import.meta.env.VITE_DEFAULT_HOST_USERNAME || "priyanshu"
   );
   const publicBookingBase = (
-    import.meta.env.VITE_PUBLIC_BOOKING_BASE_URL || "https://cal.com"
+    import.meta.env.VITE_PUBLIC_BOOKING_BASE_URL ||
+    "https://calclo.bepriyanshu.tech"
   ).replace(/\/$/, "");
   const publicBookingLink = `${publicBookingBase}/${encodeURIComponent(hostSlug)}/${encodeURIComponent(slug)}`;
   const skipPersist = useRef(true);
