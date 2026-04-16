@@ -3,21 +3,7 @@ import { Icon } from "./Icon";
 import { Switch } from "./Switch";
 import { ActionsDropdown } from "./ActionsDropdown";
 
-/**
- * Pixel-perfect replica of a single event-type row from Cal.com.
- *
- * Layout per the reference screenshot:
- *  <li>
- *    <div hover:bg-cal-muted> (row wrapper with hover state)
- *      <div group px-4 py-4 sm:px-6> (inner content)
- *        ArrowButton up   (invisible, appears on group hover)
- *        ArrowButton down (invisible, appears on group hover)
- *        <Item>           (title + slug on line 1, badge row below)
- *        <Actions>        (Hidden label + switch + button group)
- *      </div>
- *    </div>
- *  </li>
- */
+/** Event type row: main content (title, slug, badges) on the left; toggle + actions on the right. */
 export function EventTypeCard({ type, profile, onAction, isFirst, isLast }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [enabled, setEnabled] = useState(!type.hidden);
@@ -45,7 +31,7 @@ export function EventTypeCard({ type, profile, onAction, isFirst, isLast }) {
     <li
       className={`group hover:bg-subtle/20 transition-colors ${isDropdownOpen ? 'relative z-40' : ''}`}
     >
-      <div className="relative flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:gap-0 sm:px-6">
+      <div className="relative flex flex-row items-center gap-3 px-3 py-4 sm:px-6">
         <div className="hidden sm:flex absolute -left-4 top-1/2 -translate-y-1/2 flex-col gap-1 opacity-0 pointer-events-none transition-opacity duration-150 group-hover:opacity-100 group-hover:pointer-events-auto">
           <button
             type="button"
@@ -78,7 +64,7 @@ export function EventTypeCard({ type, profile, onAction, isFirst, isLast }) {
         {/* Content — row click opens edit (same as Cal.com) */}
         <button
           type="button"
-          className="-my-1 -ml-1 min-w-0 flex-1 rounded-lg py-1 pl-1 pr-2 text-left hover:bg-subtle/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-emphasis/40 sm:-my-1"
+          className="-my-1 -ml-1 min-w-0 flex-1 rounded-lg py-1 pl-1 pr-1 text-left hover:bg-subtle/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-emphasis/40 sm:pr-2"
           onClick={() => onAction("edit")}
         >
           <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
@@ -104,7 +90,7 @@ export function EventTypeCard({ type, profile, onAction, isFirst, isLast }) {
         {/* Actions Container — ref for dropdown dismiss (must not clip menu: parent uses overflow-visible) */}
         <div
           ref={actionsRef}
-          className="flex shrink-0 items-center justify-between gap-3 border-t border-subtle pt-3 sm:justify-end sm:border-t-0 sm:pt-0 sm:pl-2 sm:gap-4 lg:gap-6"
+          className="flex shrink-0 items-center justify-end gap-2 sm:gap-3 sm:pl-2 lg:gap-4"
         >
            {/* Hidden Label */}
            {!enabled && (

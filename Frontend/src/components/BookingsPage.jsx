@@ -309,9 +309,9 @@ export function BookingsPage({ onNavigate }) {
           bookings.map((b) => (
             <div
               key={b.id}
-              className="relative flex flex-col gap-4 border-b border-subtle px-3 py-5 last:border-b-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:px-5 sm:py-6"
+              className="relative flex flex-row items-center gap-3 border-b border-subtle px-3 py-5 last:border-b-0 sm:justify-between sm:gap-4 sm:px-5 sm:py-6"
             >
-              <div className="flex w-full flex-col gap-4 sm:flex-row sm:gap-6">
+              <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:gap-6">
               <div className="w-full shrink-0 text-sm text-emphasis sm:w-[140px] md:w-[150px]">
                 <p className="font-medium">{b.dateLabel}</p>
                 <p className="mt-1 text-subtle">{b.timeLabel}</p>
@@ -332,7 +332,7 @@ export function BookingsPage({ onNavigate }) {
               </div>
               </div>
 
-              <div className="relative flex shrink-0 justify-end self-end sm:self-start">
+              <div className="relative flex shrink-0 items-center justify-end">
                 <button
                   type="button"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-subtle text-subtle hover:bg-subtle/40"

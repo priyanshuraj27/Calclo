@@ -137,6 +137,44 @@ Scalar AI Assignment/
 
 ---
 
+## Database schema
+
+PostgreSQL is modeled with [Prisma](https://www.prisma.io/) (`Backend/prisma/schema.prisma`). IDs are string CUIDs (`@map("_id")` preserves a Mongo-style column name from an earlier migration path).
+
+### Enums
+
+| Enum | Values |
+|------|--------|
+| `BookingStatus` | `CONFIRMED`, `TENTATIVE`, `CANCELLED`, `RESCHEDULED` |
+| `OverrideType` | `CLOSED` (day blocked), `CUSTOM_HOURS` (replacement intervals) |
+| `BookingTokenPurpose` | `CONFIRMATION`, `CANCEL`, `RESCHEDULE` (email links) |
+
+### Models
+
+**User** — Host account: `username`, `email`, `fullName`, `avatar`, `defaultTimezone`, `password` (hashed). Owns event types, schedules, overrides, and bookings.
+
+**EventType** — Bookable offering per host: `title`, `description`, `slug` (unique per host), `durationMinutes`, `durationOptions[]`, display (`sortOrder`, `hidden`, `active`, `color`), scheduling (`schedulingType`, `requiresConfirmation`, `seatsPerTimeSlot`, `metadata`), link to **`AvailabilitySchedule`**, buffers (`bufferBeforeMinutes`, `bufferAfterMinutes`), `slotIntervalMinutes`, `minimumNoticeMinutes`, `bookingWindowDays`, `bookingQuestions` (JSON). Cascade delete with host; schedule delete is **restricted** if referenced.
+
+**AvailabilitySchedule** — Named weekly pattern: `name`, `timezone`, `isDefault`, `weeklyRules` (JSON: day → time intervals). Many event types can share one schedule. Per-host overrides hang off the schedule.
+
+**AvailabilityOverride** — Per schedule + calendar **`date`** (string): `type` (`CLOSED` \| `CUSTOM_HOURS`), `intervals` (JSON). Unique `(scheduleId, date)`.
+
+**Booking** — Instance of a booking: `status`, `startAt` / `endAt`, **`blockedStartAt` / `blockedEndAt`** (includes buffers for conflict checks), `bookerName`, `bookerEmail`, `guestEmails[]`, `answers` (JSON, custom questions), `notes`, `meetingWhereType` / `meetingWhereDetail`, `cancellationReason`, optional `rescheduledFromBookingId`. Host and event type relations; event type delete is **restricted** while bookings exist.
+
+**BookingToken** — Hashed token per purpose (`CONFIRMATION`, `CANCEL`, `RESCHEDULE`) with `expiresAt`, for secure email actions. Cascade delete with booking.
+
+### Relationships (summary)
+
+```
+User ─┬─< EventType >── AvailabilitySchedule ─┬─< AvailabilityOverride
+      ├─< AvailabilitySchedule (direct)         │
+      ├─< AvailabilityOverride (direct)         │
+      └─< Booking >── EventType
+Booking ─┬─< BookingToken
+```
+
+---
+
 ## API overview
 
 REST API under `/api/v1` (see `Backend/postman/` for a Postman collection). Typical areas:
