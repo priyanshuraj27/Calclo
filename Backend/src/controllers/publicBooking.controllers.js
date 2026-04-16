@@ -26,13 +26,22 @@ import { withMongoId } from "../utils/prismaNormalize.util.js";
 const hashToken = (raw) =>
   crypto.createHash("sha256").update(raw, "utf8").digest("hex");
 
+function parseIsoDateOrThrow(value, fieldName) {
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new ApiError(400, `${fieldName} must be a valid datetime`);
+  }
+  return parsed;
+}
+
 const mapBookingWithRelations = (booking) => {
   if (!booking) return booking;
-  const { eventType, hostUser, ...rest } = withMongoId(booking);
+  const { eventType, hostUser, host, ...rest } = withMongoId(booking);
+  const hostData = hostUser || host;
   return {
     ...rest,
     ...(eventType && { eventTypeId: eventType }),
-    ...(hostUser && { hostUserId: hostUser }),
+    ...(hostData && { hostUserId: hostData }),
   };
 };
 
@@ -114,7 +123,7 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
     req.body.durationMinutes
   );
 
-  const start = new Date(startAt);
+  const start = parseIsoDateOrThrow(startAt, "startAt");
   const end = new Date(
     start.getTime() + bookingDurationMinutes * 60 * 1000
   );
@@ -131,7 +140,7 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
     await prisma.$transaction(async (tx) => {
       const conflicts = await tx.booking.findMany({
         where: {
-          hostUserId: host.id,
+          hostUserId: host._id,
           status: { in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE] },
           blockedStartAt: { lt: blockedEnd },
           blockedEndAt: { gt: blockedStart },
@@ -149,7 +158,7 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
       created = await tx.booking.create({
         data: {
           hostUserId: host._id,
-          eventTypeId: eventType.id,
+          eventTypeId: eventType._id,
           status,
           startAt: start,
           endAt: end,
@@ -186,7 +195,7 @@ export const createPublicBooking = asyncHandler(async (req, res) => {
       eventType: {
         select: { title: true, slug: true, durationMinutes: true, description: true },
       },
-      hostUser: {
+      host: {
         select: { username: true, fullName: true, email: true, avatar: true },
       },
     },
@@ -243,7 +252,7 @@ export const getBookingConfirmation = asyncHandler(async (req, res) => {
       eventType: {
         select: { title: true, slug: true, durationMinutes: true, description: true },
       },
-      hostUser: {
+      host: {
         select: { username: true, fullName: true, avatar: true, email: true },
       },
     },
@@ -354,7 +363,7 @@ export const reschedulePublicBooking = asyncHandler(async (req, res) => {
   const { type: meetingWhereType, detail: meetingWhereDetail } =
     normalizeMeetingWhere(whereInput);
 
-  const start = new Date(newStartAt);
+  const start = parseIsoDateOrThrow(newStartAt, "newStartAt");
   const prevDurationMinutes = Math.max(
     1,
     Math.round(
@@ -442,7 +451,7 @@ export const reschedulePublicBooking = asyncHandler(async (req, res) => {
       eventType: {
         select: { title: true, slug: true, durationMinutes: true, description: true },
       },
-      hostUser: {
+      host: {
         select: { username: true, fullName: true, email: true, avatar: true },
       },
     },

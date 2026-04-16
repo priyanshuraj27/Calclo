@@ -115,7 +115,7 @@ export async function loadPublicEventContext(hostUsername, eventSlug) {
   });
   if (!host) return { host: null, eventType: null };
   const eventType = await prisma.eventType.findFirst({
-    where: { hostUserId: host._id, slug: eventSlug, active: true },
+    where: { hostUserId: host.id, slug: eventSlug, active: true },
     include: { availabilitySchedule: true },
   });
   const mappedEventType = eventType

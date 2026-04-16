@@ -155,6 +155,11 @@ function validateMeetingWhereForSubmit(type, detail) {
 function buildAckFromApi(apiPayload, event, tz, meta) {
   const b = apiPayload?.booking;
   if (!b) return null;
+  const startMs = new Date(b.startAt).getTime();
+  const endMs = new Date(b.endAt).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    throw new Error("Booking response contained an invalid time value.");
+  }
   const host =
     typeof b.hostUserId === "object" && b.hostUserId ? b.hostUserId : {};
   const et =
@@ -169,7 +174,7 @@ function buildAckFromApi(apiPayload, event, tz, meta) {
   const actualMinutes = Math.max(
     1,
     Math.round(
-      (new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60000
+      (endMs - startMs) / 60000
     )
   );
   return {
@@ -179,8 +184,8 @@ function buildAckFromApi(apiPayload, event, tz, meta) {
     hostEmail: host.email || "",
     guestName: b.bookerName,
     guestEmail: b.bookerEmail,
-    startAt: new Date(b.startAt).toISOString(),
-    endAt: new Date(b.endAt).toISOString(),
+    startAt: new Date(startMs).toISOString(),
+    endAt: new Date(endMs).toISOString(),
     timezone: tz,
     location: w.displayLabel,
     meetingWhereType: mType,
