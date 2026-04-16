@@ -8,6 +8,51 @@ import {
   resolveDurationOptionsForCreate,
 } from "../utils/eventTypeDuration.util.js";
 
+const MAX_MINIMUM_NOTICE_MINUTES = 365 * 24 * 60;
+const MAX_BUFFER_MINUTES = 240;
+
+function clampInt(v, min, max, fallback) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  const i = Math.trunc(n);
+  return Math.min(max, Math.max(min, i));
+}
+
+function clampLimitFieldsOnUpdate(updates) {
+  if (updates.bufferBeforeMinutes !== undefined) {
+    updates.bufferBeforeMinutes = clampInt(
+      updates.bufferBeforeMinutes,
+      0,
+      MAX_BUFFER_MINUTES,
+      0
+    );
+  }
+  if (updates.bufferAfterMinutes !== undefined) {
+    updates.bufferAfterMinutes = clampInt(
+      updates.bufferAfterMinutes,
+      0,
+      MAX_BUFFER_MINUTES,
+      0
+    );
+  }
+  if (updates.minimumNoticeMinutes !== undefined) {
+    updates.minimumNoticeMinutes = clampInt(
+      updates.minimumNoticeMinutes,
+      0,
+      MAX_MINIMUM_NOTICE_MINUTES,
+      0
+    );
+  }
+  if (updates.slotIntervalMinutes !== undefined) {
+    updates.slotIntervalMinutes = clampInt(
+      updates.slotIntervalMinutes,
+      1,
+      24 * 60,
+      15
+    );
+  }
+}
+
 const assertScheduleOwnedByHost = async (scheduleId, hostUserId) => {
   const schedule = await prisma.availabilitySchedule.findFirst({
     where: { id: scheduleId, hostUserId },
@@ -79,10 +124,30 @@ export const createEventType = asyncHandler(async (req, res) => {
         seatsPerTimeSlot == null ? null : Number(seatsPerTimeSlot),
       metadata: metadata ?? null,
       availabilityScheduleId: scheduleId,
-      bufferBeforeMinutes: Number(bufferBeforeMinutes ?? 0),
-      bufferAfterMinutes: Number(bufferAfterMinutes ?? 0),
-      slotIntervalMinutes: Number(slotIntervalMinutes ?? 15),
-      minimumNoticeMinutes: Number(minimumNoticeMinutes ?? 0),
+      bufferBeforeMinutes: clampInt(
+        bufferBeforeMinutes ?? 0,
+        0,
+        MAX_BUFFER_MINUTES,
+        0
+      ),
+      bufferAfterMinutes: clampInt(
+        bufferAfterMinutes ?? 0,
+        0,
+        MAX_BUFFER_MINUTES,
+        0
+      ),
+      slotIntervalMinutes: clampInt(
+        slotIntervalMinutes ?? 15,
+        1,
+        24 * 60,
+        15
+      ),
+      minimumNoticeMinutes: clampInt(
+        minimumNoticeMinutes ?? 0,
+        0,
+        MAX_MINIMUM_NOTICE_MINUTES,
+        0
+      ),
       bookingWindowDays: Number(bookingWindowDays ?? 60),
       bookingQuestions: bookingQuestions ?? [],
       durationOptions: resolveDurationOptionsForCreate(
@@ -154,6 +219,7 @@ export const updateMyEventType = asyncHandler(async (req, res) => {
       updates.durationOptions
     );
   }
+  clampLimitFieldsOnUpdate(updates);
   const saved = await prisma.eventType.update({
     where: { id: doc.id },
     data: updates,

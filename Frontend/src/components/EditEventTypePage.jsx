@@ -5,6 +5,16 @@ import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { apiData } from "../api/client.js";
 import { summarizeDays, summarizeTime } from "../api/scheduleMappers.js";
 import { buildDurationOptionsPayload } from "../utils/eventTypeDuration.js";
+import {
+  BUFFER_MINUTE_OPTIONS,
+  SLOT_INTERVAL_OPTIONS,
+  MINIMUM_NOTICE_UNITS,
+  minimumNoticeToValueAndUnit,
+  valueAndUnitToMinimumNoticeMinutes,
+  inferSlotIntervalSelection,
+  persistedSlotIntervalMinutes,
+  snapToBufferOption,
+} from "../utils/eventTypeLimits.js";
 
 // ─── Sub-Components ─────────────────────────────────────────────────────────
 
@@ -182,6 +192,96 @@ function LocationTypeSelect({ value, onChange, instanceId, ariaLabel }) {
   );
 }
 
+/**
+ * Themed dropdown for Limits (buffers, slot interval, units) — matches dark theme.
+ * `value` may be a number or the string `"event"` for slot interval.
+ */
+function LimitsDropdown({ instanceId, ariaLabel, options, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const listId = `${instanceId}-listbox`;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocMouseDown = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const selected =
+    options.find((o) => o.value === value) || options[0] || { label: "", value };
+
+  return (
+    <div className="relative min-w-0" ref={wrapRef}>
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-subtle bg-default px-3 py-2.5 text-left text-sm font-medium text-emphasis outline-none transition hover:border-emphasis/60 focus-visible:ring-2 focus-visible:ring-emphasis/40"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="truncate">{selected.label}</span>
+        <Icon
+          name="chevron-down"
+          className={`h-4 w-4 shrink-0 text-subtle transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open ? (
+        <ul
+          id={listId}
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-[60] mt-1 max-h-[min(280px,50vh)] overflow-y-auto rounded-lg border py-1 shadow-xl"
+          style={{
+            backgroundColor: "var(--cal-bg)",
+            borderColor: "var(--cal-border)",
+            color: "var(--cal-text-emphasis)",
+          }}
+        >
+          {options.map((opt) => {
+            const isActive = opt.value === value;
+            return (
+              <li key={String(opt.value)} role="none">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={isActive}
+                  className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors ${
+                    isActive
+                      ? "bg-[var(--cal-bg-subtle)] font-semibold text-[var(--cal-text-emphasis)]"
+                      : "text-[var(--cal-text)] hover:bg-[var(--cal-bg-muted)]"
+                  }`}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate">{opt.label}</span>
+                  {isActive ? (
+                    <Icon name="check" className="h-4 w-4 shrink-0 text-emphasis" />
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 const isPersistedId = (id) => {
@@ -206,6 +306,11 @@ export function EditEventTypePage({
   const [durationOptionsText, setDurationOptionsText] = useState(
     initialDurationOptionsText || ""
   );
+  const [bufferBeforeMinutes, setBufferBeforeMinutes] = useState(0);
+  const [bufferAfterMinutes, setBufferAfterMinutes] = useState(0);
+  const [minimumNoticeValue, setMinimumNoticeValue] = useState(0);
+  const [minimumNoticeUnit, setMinimumNoticeUnit] = useState("hours");
+  const [slotIntervalSelection, setSlotIntervalSelection] = useState("event");
   const [description, setDescription] = useState(initialDescription || "");
   const [activeTab, setActiveTab] = useState("basics");
   const [enabled, setEnabled] = useState(true);
@@ -329,6 +434,15 @@ export function EditEventTypePage({
             ? schedRef._id
             : doc.availabilityScheduleId;
         if (sid) setAvailabilityScheduleId(String(sid));
+        setBufferBeforeMinutes(snapToBufferOption(doc.bufferBeforeMinutes));
+        setBufferAfterMinutes(snapToBufferOption(doc.bufferAfterMinutes));
+        const mnParts = minimumNoticeToValueAndUnit(doc.minimumNoticeMinutes);
+        setMinimumNoticeValue(mnParts.value);
+        setMinimumNoticeUnit(mnParts.unit);
+        const durM = Number(doc.durationMinutes) || 15;
+        setSlotIntervalSelection(
+          inferSlotIntervalSelection(durM, doc.slotIntervalMinutes)
+        );
         queueMicrotask(() => {
           skipPersist.current = false;
         });
@@ -345,13 +459,25 @@ export function EditEventTypePage({
     if (!isPersistedId(eventTypeId)) return;
     if (skipPersist.current) return;
     const t = setTimeout(() => {
+      const durM = Number(duration) || 15;
+      const minimumNoticeMinutes = valueAndUnitToMinimumNoticeMinutes(
+        minimumNoticeValue,
+        minimumNoticeUnit
+      );
       const patch = {
         title,
         slug,
-        durationMinutes: Number(duration) || 15,
+        durationMinutes: durM,
         description,
         hidden: !enabled,
         durationOptions: buildDurationOptionsPayload(duration, durationOptionsText),
+        bufferBeforeMinutes,
+        bufferAfterMinutes,
+        minimumNoticeMinutes,
+        slotIntervalMinutes: persistedSlotIntervalMinutes(
+          slotIntervalSelection,
+          durM
+        ),
       };
       if (isPersistedId(availabilityScheduleId)) {
         patch.availabilityScheduleId = availabilityScheduleId;
@@ -371,16 +497,33 @@ export function EditEventTypePage({
     eventTypeId,
     availabilityScheduleId,
     durationOptionsText,
+    bufferBeforeMinutes,
+    bufferAfterMinutes,
+    minimumNoticeValue,
+    minimumNoticeUnit,
+    slotIntervalSelection,
   ]);
 
   const persistEventType = async () => {
+    const durM = Number(duration) || 15;
+    const minimumNoticeMinutes = valueAndUnitToMinimumNoticeMinutes(
+      minimumNoticeValue,
+      minimumNoticeUnit
+    );
     const payload = {
       title: (title || "").trim(),
       slug: (slug || "").trim(),
-      durationMinutes: Number(duration) || 15,
+      durationMinutes: durM,
       description,
       hidden: !enabled,
       durationOptions: buildDurationOptionsPayload(duration, durationOptionsText),
+      bufferBeforeMinutes,
+      bufferAfterMinutes,
+      minimumNoticeMinutes,
+      slotIntervalMinutes: persistedSlotIntervalMinutes(
+        slotIntervalSelection,
+        durM
+      ),
     };
 
     if (!payload.title || !payload.slug) {
@@ -473,6 +616,20 @@ export function EditEventTypePage({
     () => getScheduleSummaryLine(selectedSchedule),
     [selectedSchedule]
   );
+
+  const slotIntervalOptions = useMemo(() => {
+    const base = [...SLOT_INTERVAL_OPTIONS];
+    if (
+      slotIntervalSelection !== "event" &&
+      !base.some((o) => o.value === slotIntervalSelection)
+    ) {
+      base.push({
+        label: `${slotIntervalSelection} minutes`,
+        value: slotIntervalSelection,
+      });
+    }
+    return base;
+  }, [slotIntervalSelection]);
 
   const sidebarItems = [
     { id: "basics", label: "Basics", sublabel: `${duration} mins`, icon: "link" },
@@ -1030,26 +1187,115 @@ export function EditEventTypePage({
             {/* ── Limits Tab ──────────────────────────────────── */}
             {activeTab === "limits" && (
               <div className="space-y-8 animate-in fade-in slide-in-from-right-1">
-                 <div className="bg-default border border-subtle rounded-xl p-8 space-y-8 shadow-sm">
-                    <SectionHeader title="Booking Limits" />
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                       <InputField label="Max bookings per day" suffix="Bookings" placeholder="No limit" />
-                       <InputField label="Max bookings per week" suffix="Bookings" placeholder="No limit" />
-                    </div>
+                <div className="bg-default border border-subtle rounded-xl p-6 sm:p-8 space-y-8 shadow-sm">
+                  <p className="text-sm text-subtle leading-relaxed max-w-2xl">
+                    Buffers add quiet time before and after each booking so slots do not sit
+                    back-to-back. Minimum notice hides times that are too soon. Slot intervals
+                    control how start times are spaced on the booker.
+                  </p>
 
-                    <div className="pt-8 border-t border-subtle">
-                       <SectionHeader title="Notice Period" />
-                       <InputField label="Minimum notice period" suffix="Minutes" placeholder="e.g. 120" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-emphasis block">
+                        Before event
+                      </label>
+                      <LimitsDropdown
+                        instanceId="limit-buffer-before"
+                        ariaLabel="Buffer before event"
+                        options={BUFFER_MINUTE_OPTIONS}
+                        value={bufferBeforeMinutes}
+                        onChange={(v) => setBufferBeforeMinutes(Number(v) || 0)}
+                      />
                     </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-emphasis block">
+                        After event
+                      </label>
+                      <LimitsDropdown
+                        instanceId="limit-buffer-after"
+                        ariaLabel="Buffer after event"
+                        options={BUFFER_MINUTE_OPTIONS}
+                        value={bufferAfterMinutes}
+                        onChange={(v) => setBufferAfterMinutes(Number(v) || 0)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-emphasis block">
+                        Minimum notice
+                      </label>
+                      <div className="flex flex-col xs:flex-row gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          inputMode="numeric"
+                          className="min-w-0 flex-1 rounded-lg border border-subtle bg-default px-3 py-2.5 text-sm font-medium text-emphasis outline-none transition focus:border-emphasis focus:ring-1 focus:ring-emphasis"
+                          value={minimumNoticeValue}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw === "") {
+                              setMinimumNoticeValue(0);
+                              return;
+                            }
+                            const n = Math.max(0, Math.floor(Number(raw)));
+                            setMinimumNoticeValue(Number.isFinite(n) ? n : 0);
+                          }}
+                        />
+                        <div className="w-full xs:w-[11.5rem] shrink-0">
+                          <LimitsDropdown
+                            instanceId="limit-minimum-notice-unit"
+                            ariaLabel="Minimum notice unit"
+                            options={MINIMUM_NOTICE_UNITS}
+                            value={minimumNoticeUnit}
+                            onChange={setMinimumNoticeUnit}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-emphasis block">
+                        Time-slot intervals
+                      </label>
+                      <LimitsDropdown
+                        instanceId="limit-slot-interval"
+                        ariaLabel="Time slot intervals"
+                        options={slotIntervalOptions}
+                        value={slotIntervalSelection}
+                        onChange={setSlotIntervalSelection}
+                      />
+                    </div>
+                  </div>
 
-                    <div className="pt-8 border-t border-subtle">
-                       <SectionHeader title="Buffer Time" />
-                       <div className="space-y-6">
-                          <InputField label="Buffer before event" suffix="Minutes" placeholder="0" />
-                          <InputField label="Buffer after event" suffix="Minutes" placeholder="0" />
-                       </div>
-                    </div>
-                 </div>
+                  <div className="pt-6 border-t border-subtle space-y-5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      Advanced limits (UI only)
+                    </p>
+                    <SettingsToggle
+                      title="Limit booking frequency"
+                      description="Limit how many times this event can be booked."
+                      checked={false}
+                      onChange={() => {}}
+                    />
+                    <SettingsToggle
+                      title="Only show the first slot of each day as available"
+                      description="This will limit your availability for this event type to one slot per day, scheduled at the earliest available time."
+                      checked={false}
+                      onChange={() => {}}
+                    />
+                    <SettingsToggle
+                      title="Limit total booking duration"
+                      description="Limit total amount of time that this event can be booked."
+                      checked={false}
+                      onChange={() => {}}
+                    />
+                    <SettingsToggle
+                      title="Limit number of upcoming bookings per booker"
+                      description="Limit the number of active bookings a booker can make for this event type."
+                      checked={false}
+                      onChange={() => {}}
+                    />
+                  </div>
+                </div>
               </div>
             )}
 
