@@ -72,12 +72,10 @@ Overrides are stored per schedule and applied when generating public time slots.
 
 ### 1. Event types management
 
-| Feature | Status |
-|--------|--------|
-| Create event types with **title**, **description**, **duration** (minutes), and **URL slug** | Done |
-| **Edit** and **delete** existing event types | Done |
-| **List** all event types on a dashboard | Done |
-| **Unique public booking link** per event type | Done |
+- Create event types with **title**, **description**, **duration** (minutes), and **URL slug**
+- **Edit** and **delete** existing event types
+- **List** all event types on a dashboard
+- **Unique public booking link** per event type
 
 Additional capabilities include duration options, limits (buffers, minimum notice, slot intervals), and attachment to an availability schedule.
 
@@ -85,41 +83,35 @@ Additional capabilities include duration options, limits (buffers, minimum notic
 
 ### 2. Availability settings
 
-| Feature | Status |
-|--------|--------|
-| Set **available days** of the week (e.g. Mon–Fri) | Done |
-| Set **time ranges** per day (e.g. 9:00 AM – 5:00 PM) | Done |
-| Set **timezone** for the schedule (weekly hours interpreted in that zone) | Done |
-| **Multiple schedules** (e.g. “Working hours”, “Weekends”) | Done |
+- Set **available days** of the week (e.g. Mon–Fri)
+- Set **time ranges** per day (e.g. 9:00 AM – 5:00 PM)
+- Set **timezone** for the schedule (weekly hours interpreted in that zone)
+- **Multiple schedules** (e.g. “Working hours”, “Weekends”)
 
 ---
 
 ### 3. Public booking page
 
-| Feature | Status |
-|--------|--------|
-| **Calendar** to pick a date | Done |
-| **Available slots** derived from schedule + overrides + buffers + conflicts | Done |
-| **Booking form** (booker name, email, optional custom questions) | Done |
-| **No double booking** — server-side overlap checks against existing bookings | Done |
-| **Confirmation** view with event and time details | Done |
+- **Calendar** to pick a date
+- **Available slots** derived from schedule + overrides + buffers + conflicts
+- **Booking form** (booker name, email, optional custom questions)
+- **No double booking** — server-side overlap checks against existing bookings
+- **Confirmation** view with event and time details
 
 ---
 
 ### 4. Bookings dashboard & extras
 
-| Feature | Status |
-|--------|--------|
-| **Upcoming** bookings | Done |
-| **Past** (and other tabs, e.g. cancelled) | Done |
-| **Cancel** a booking (host) | Done |
-| **Responsive** layout (mobile / tablet / desktop) | Done |
-| **Multiple availability schedules** | Done |
-| **Date overrides** (block dates or custom hours) | Done |
-| **Rescheduling** flow for existing bookings | Done |
-| **Email** notifications on confirmation / cancellation | Done |
-| **Buffer** time before/after meetings (per event type) | Done |
-| **Custom booking questions** (per event type) | Done |
+- **Upcoming** bookings
+- **Past** (and other tabs, e.g. cancelled)
+- **Cancel** a booking (host)
+- **Responsive** layout (mobile / tablet / desktop)
+- **Multiple availability schedules**
+- **Date overrides** (block dates or custom hours)
+- **Rescheduling** flow for existing bookings
+- **Email** notifications on confirmation / cancellation
+- **Buffer** time before/after meetings (per event type)
+- **Custom booking questions** (per event type)
 
 ---
 
