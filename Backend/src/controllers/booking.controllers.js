@@ -14,6 +14,42 @@ const activeStatuses = [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.TENTATIVE];
 const hashToken = (raw) =>
   crypto.createHash("sha256").update(raw, "utf8").digest("hex");
 
+const ALLOWED_MEETING_WHERE = new Set([
+  "cal-video",
+  "google-meet",
+  "zoom",
+  "phone",
+  "in-person",
+  "custom-link",
+]);
+
+function normalizeGuestEmailsInput(input) {
+  if (input == null) return [];
+  if (Array.isArray(input)) return input;
+  if (typeof input === "string") {
+    return input
+      .split(/[\s,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function sanitizeGuestEmails(input) {
+  const raw = normalizeGuestEmailsInput(input);
+  const out = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const e = String(item || "").trim().toLowerCase();
+    if (!e.includes("@") || e.length > 254) continue;
+    if (seen.has(e)) continue;
+    seen.add(e);
+    out.push(e);
+    if (out.length >= 25) break;
+  }
+  return out;
+}
+
 function queueEmail(fn) {
   void Promise.resolve()
     .then(fn)
@@ -192,11 +228,28 @@ export const rescheduleMyBooking = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, "Booking rescheduled", created));
 });
 
-/** In-place: same start, new end + blocked window from chosen length. */
-export const updateBookingDuration = asyncHandler(async (req, res) => {
-  const { durationMinutes: durationBody } = req.body;
-  if (durationBody == null || durationBody === "") {
-    throw new ApiError(400, "durationMinutes is required");
+/**
+ * PATCH host booking: duration and/or meeting location and/or additional guest emails.
+ * Backward compatible when body only contains `durationMinutes`.
+ */
+export const patchMyBooking = asyncHandler(async (req, res) => {
+  const {
+    durationMinutes: durationBody,
+    meetingWhereType,
+    meetingWhereDetail,
+    guestEmails,
+  } = req.body;
+
+  const hasDuration = durationBody != null && durationBody !== "";
+  const hasWhere =
+    meetingWhereType !== undefined || meetingWhereDetail !== undefined;
+  const hasGuests = guestEmails !== undefined;
+
+  if (!hasDuration && !hasWhere && !hasGuests) {
+    throw new ApiError(
+      400,
+      "Provide durationMinutes and/or meetingWhereType, meetingWhereDetail, or guestEmails"
+    );
   }
 
   const booking = await prisma.booking.findFirst({
@@ -207,7 +260,7 @@ export const updateBookingDuration = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Cannot update a cancelled booking");
   }
   if (!activeStatuses.includes(booking.status)) {
-    throw new ApiError(400, "Can only update duration for confirmed or tentative bookings");
+    throw new ApiError(400, "Can only update confirmed or tentative bookings");
   }
 
   const eventType = await prisma.eventType.findUnique({
@@ -215,46 +268,73 @@ export const updateBookingDuration = asyncHandler(async (req, res) => {
   });
   if (!eventType) throw new ApiError(404, "Event type missing");
 
-  const chosenMinutes = resolveDurationMinutesForRequest(
-    eventType,
-    durationBody
-  );
+  const data = {};
 
-  const start = new Date(booking.startAt);
-  const end = new Date(start.getTime() + chosenMinutes * 60 * 1000);
-  const blockedStart = new Date(
-    start.getTime() - eventType.bufferBeforeMinutes * 60 * 1000
-  );
-  const blockedEnd = new Date(
-    end.getTime() + eventType.bufferAfterMinutes * 60 * 1000
-  );
+  if (hasWhere) {
+    if (meetingWhereType !== undefined) {
+      const t = String(meetingWhereType).trim();
+      if (!ALLOWED_MEETING_WHERE.has(t)) {
+        throw new ApiError(400, "Invalid meetingWhereType");
+      }
+      data.meetingWhereType = t;
+    }
+    if (meetingWhereDetail !== undefined) {
+      data.meetingWhereDetail = String(meetingWhereDetail ?? "")
+        .trim()
+        .slice(0, 2000);
+    }
+  }
 
-  const others = await prisma.booking.findMany({
-    where: {
-      hostUserId: req.user._id,
-      id: { not: booking.id },
-      status: { in: activeStatuses },
-      blockedStartAt: { lt: blockedEnd },
-      blockedEndAt: { gt: blockedStart },
-    },
-  });
+  if (hasGuests) {
+    data.guestEmails = sanitizeGuestEmails(guestEmails);
+  }
 
-  if (hasOverlap(blockedStart, blockedEnd, others)) {
-    throw new ApiError(409, "That time range is no longer available");
+  if (hasDuration) {
+    const chosenMinutes = resolveDurationMinutesForRequest(
+      eventType,
+      durationBody
+    );
+
+    const start = new Date(booking.startAt);
+    const end = new Date(start.getTime() + chosenMinutes * 60 * 1000);
+    const blockedStart = new Date(
+      start.getTime() - eventType.bufferBeforeMinutes * 60 * 1000
+    );
+    const blockedEnd = new Date(
+      end.getTime() + eventType.bufferAfterMinutes * 60 * 1000
+    );
+
+    const others = await prisma.booking.findMany({
+      where: {
+        hostUserId: req.user._id,
+        id: { not: booking.id },
+        status: { in: activeStatuses },
+        blockedStartAt: { lt: blockedEnd },
+        blockedEndAt: { gt: blockedStart },
+      },
+    });
+
+    if (hasOverlap(blockedStart, blockedEnd, others)) {
+      throw new ApiError(409, "That time range is no longer available");
+    }
+
+    data.endAt = end;
+    data.blockedStartAt = blockedStart;
+    data.blockedEndAt = blockedEnd;
+  }
+
+  if (Object.keys(data).length === 0) {
+    throw new ApiError(400, "No valid fields to update");
   }
 
   const updated = await prisma.booking.update({
     where: { id: booking.id },
-    data: {
-      endAt: end,
-      blockedStartAt: blockedStart,
-      blockedEndAt: blockedEnd,
-    },
+    data,
   });
 
   return res
     .status(200)
-    .json(new ApiResponse(200, "Duration updated", withMongoId(updated)));
+    .json(new ApiResponse(200, "Booking updated", withMongoId(updated)));
 });
 
 /**

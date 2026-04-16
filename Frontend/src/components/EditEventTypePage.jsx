@@ -648,82 +648,88 @@ export function EditEventTypePage({
   ];
 
   return (
-    <div className="flex flex-col h-full -m-2 sm:-m-4 lg:-m-6 bg-default text-default overflow-hidden">
-      {/* ── Top Header ──────────────────────────────────────── */}
-      <div className="bg-default border-b border-subtle px-4 py-3 flex items-center justify-between z-40 transition-all duration-200 sticky top-0">
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <button 
-            onClick={() => onNavigate("/event-types")}
-            className="p-1.5 sm:p-2 hover:bg-subtle rounded-md text-subtle transition-colors"
-          >
-            <Icon name="arrow-left" className="h-4 w-4" />
-          </button>
-          <div className="min-w-0">
-            <h1 className="text-sm sm:text-lg font-bold text-emphasis truncate">{title}</h1>
-            <p className="text-[10px] sm:text-xs text-subtle font-medium truncate">cal.com/{hostSlug}/{slug}</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 sm:gap-4">
-          <div className="flex items-center gap-1 sm:gap-4 pr-2 sm:pr-3 mr-0 sm:mr-1 border-r border-subtle">
-             <div className="hidden xs:flex items-center border-r border-subtle pr-2 sm:pr-4 mr-1 sm:mr-2">
-                <Switch checked={enabled} onChange={setEnabled} />
-             </div>
-             <button
-               type="button"
-               onClick={() => window.open(publicBookingLink, "_blank", "noopener,noreferrer")}
-               className="p-2 hover:bg-subtle rounded-md text-subtle hover:text-emphasis transition group"
-               title="Preview"
-             >
-               <Icon name="external-link" className="h-[18px] w-[18px]" />
-             </button>
-             <button
-               type="button"
-               onClick={() => {
-                 navigator.clipboard?.writeText(publicBookingLink);
-               }}
-               className="hidden sm:block p-2 hover:bg-subtle rounded-md text-subtle hover:text-emphasis transition"
-               title="Copy link"
-             >
-               <Icon name="link" className="h-[18px] w-[18px]" />
-             </button>
-             <button
-               type="button"
-               onClick={handleDelete}
-               className="p-2 hover:bg-subtle rounded-md text-subtle hover:text-red-500 transition"
-               title="Delete"
-             >
-               <Icon name="trash" className="h-[18px] w-[18px]" />
-             </button>
-          </div>
-          <button
-            type="button"
-            onClick={handleSave}
-            className={`btn-primary px-4 py-1.5 h-9 ${isSaving ? "opacity-70" : ""}`}
-          >
-            {isSaving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </div>
-
-      <div className="flex border-b border-subtle overflow-x-auto lg:hidden no-scrollbar bg-default sticky top-[57px] z-30">
-        <div className="flex px-2 py-2">
-          {sidebarItems.map((item) => (
+    <div className="flex h-full flex-col overflow-hidden bg-default text-default -mx-1 -mt-1 sm:-m-4 lg:-m-6">
+      <div className="sticky top-0 z-40 shrink-0 border-b border-subtle bg-default">
+        {/* ── Top Header ──────────────────────────────────────── */}
+        <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-3">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`flex-shrink-0 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-                activeTab === item.id 
-                  ? "bg-subtle/50 text-emphasis" 
-                  : "text-subtle hover:bg-subtle/20"
-              }`}
+              type="button"
+              onClick={() => onNavigate("/event-types")}
+              className="shrink-0 rounded-md p-1.5 text-subtle transition-colors hover:bg-subtle sm:p-2"
             >
-              <div className="flex items-center gap-2">
-                <Icon name={item.icon} className="h-4 w-4" />
-                <span>{item.label}</span>
-              </div>
+              <Icon name="arrow-left" className="h-4 w-4" />
             </button>
-          ))}
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-sm font-bold text-emphasis sm:text-base lg:text-lg">
+                {title}
+              </h1>
+              <p className="truncate text-[10px] font-medium text-subtle sm:text-xs">
+                cal.com/{hostSlug}/{slug}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-3">
+            <div className="flex items-center gap-0.5 border-r border-subtle pr-2 sm:gap-2 sm:pr-3">
+              <div className="hidden items-center border-r border-subtle pr-2 sm:flex sm:pr-3">
+                <Switch checked={enabled} onChange={setEnabled} />
+              </div>
+              <button
+                type="button"
+                onClick={() => window.open(publicBookingLink, "_blank", "noopener,noreferrer")}
+                className="group rounded-md p-2 text-subtle transition hover:bg-subtle hover:text-emphasis"
+                title="Preview"
+              >
+                <Icon name="external-link" className="h-[18px] w-[18px]" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(publicBookingLink);
+                }}
+                className="rounded-md p-2 text-subtle transition hover:bg-subtle hover:text-emphasis"
+                title="Copy link"
+              >
+                <Icon name="link" className="h-[18px] w-[18px]" />
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="rounded-md p-2 text-subtle transition hover:bg-subtle hover:text-red-500"
+                title="Delete"
+              >
+                <Icon name="trash" className="h-[18px] w-[18px]" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleSave}
+              className={`btn-primary h-9 shrink-0 px-3 py-1.5 text-sm sm:px-4 ${isSaving ? "opacity-70" : ""}`}
+            >
+              {isSaving ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+
+        <div className="no-scrollbar flex overflow-x-auto border-t border-subtle bg-default lg:hidden">
+          <div className="flex px-1 py-1.5 sm:px-2 sm:py-2">
+            {sidebarItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveTab(item.id)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors sm:gap-2 sm:px-4 sm:text-sm ${
+                  activeTab === item.id
+                    ? "bg-subtle/50 text-emphasis"
+                    : "text-subtle hover:bg-subtle/20"
+                }`}
+              >
+                <Icon name={item.icon} className="h-4 w-4 shrink-0" />
+                <span className="whitespace-nowrap">{item.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -745,8 +751,8 @@ export function EditEventTypePage({
         </aside>
 
         {/* ── Main Content Area ───────────────────────────────── */}
-        <main className="flex-1 overflow-y-auto bg-muted/20 p-6 sm:p-8 lg:p-12 scroll-smooth">
-          <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-500" ref={parent}>
+        <main className="flex-1 overflow-y-auto scroll-smooth bg-muted/20 p-4 pb-24 sm:p-6 sm:pb-20 lg:p-12 lg:pb-12">
+          <div className="mx-auto max-w-4xl space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500 sm:space-y-10" ref={parent}>
             
             {/* ── Basics Tab ──────────────────────────────────── */}
             {activeTab === "basics" && (
@@ -780,13 +786,13 @@ export function EditEventTypePage({
 
                 <div className="space-y-2">
                    <label className="text-sm font-semibold text-emphasis block">URL</label>
-                   <div className="flex rounded-lg border border-subtle bg-subtle overflow-hidden focus-within:ring-1 focus-within:ring-emphasis group transition-all shadow-sm">
-                      <span className="px-4 py-2.5 text-sm text-subtle bg-muted/20 border-r border-subtle whitespace-nowrap">
+                   <div className="group flex flex-col overflow-hidden rounded-lg border border-subtle bg-subtle shadow-sm transition-all focus-within:ring-1 focus-within:ring-emphasis sm:flex-row">
+                      <span className="whitespace-nowrap border-b border-subtle bg-muted/20 px-3 py-2 text-xs text-subtle sm:border-b-0 sm:border-r sm:px-4 sm:py-2.5 sm:text-sm">
                         cal.com/{hostSlug}/
                       </span>
                       <input 
                         type="text" 
-                        className="flex-1 bg-transparent px-4 py-2.5 text-sm outline-none font-medium" 
+                        className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm font-medium outline-none sm:px-4" 
                         value={slug}
                         onChange={(e) => setSlug(e.target.value)}
                       />

@@ -2,8 +2,6 @@ import React from "react";
 import { Navigation } from "./Navigation";
 import { UserDropdown } from "./UserDropdown";
 import { NavigationItem } from "./NavigationItem";
-import { ThemeToggle } from "./ThemeToggle";
-
 export function Sidebar({ activePath, onNavigate }) {
   const bottomItems = [
     { label: "View public page", icon: "external-link", href: "/public" },
@@ -13,7 +11,7 @@ export function Sidebar({ activePath, onNavigate }) {
   ];
 
   return (
-    <aside className="bg-cal-muted border-muted fixed left-0 hidden h-full w-14 flex-col overflow-y-auto overflow-x-hidden border-r md:sticky md:flex lg:w-56 lg:px-3">
+    <aside className="bg-cal-muted border-muted fixed left-0 hidden h-full w-14 flex-col overflow-y-auto overflow-x-hidden border-r lg:sticky lg:flex lg:w-56 lg:px-3">
       <div className="flex h-full flex-col justify-between py-3 lg:pt-4">
         <div>
           <header className="mb-4 px-2">
@@ -22,7 +20,7 @@ export function Sidebar({ activePath, onNavigate }) {
           <Navigation activePath={activePath} onNavigate={onNavigate} />
         </div>
 
-        <div className="md:px-2 md:pb-4 lg:p-0">
+        <div className="lg:px-2 lg:pb-4">
           {bottomItems.map((item) => (
             <NavigationItem 
               key={item.label} 

@@ -201,17 +201,17 @@ function App() {
     currentPath.startsWith("/availability/");
 
   return (
-    <div className="flex h-screen w-full bg-default text-default font-sans overflow-hidden flex-col md:flex-row">
+    <div className="flex h-screen w-full bg-default text-default font-sans overflow-hidden flex-col lg:flex-row">
       <IconSprites />
       
       {/* Mobile Top Bar */}
       <MobileTopBar onNavigate={navigate} />
       
-      {/* Sidebar - Hidden on mobile, shown on md+ */}
+      {/* Sidebar - Desktop (lg+); phone & tablet use bottom nav + More */}
       <Sidebar activePath={currentPath} onNavigate={navigate} />
       
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden pb-16 md:pb-0">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden pb-16 lg:pb-0">
         <div className="flex-1 overflow-y-auto flex flex-col">
           <div
             className={`w-full flex-1 flex flex-col ${

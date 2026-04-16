@@ -29,7 +29,7 @@ export function CreateEventTypeModal({ isOpen, onClose, onContinue, profileSlug 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity" 
@@ -37,20 +37,20 @@ export function CreateEventTypeModal({ isOpen, onClose, onContinue, profileSlug 
       />
       
       {/* Modal Content */}
-      <div className="relative w-full max-w-[560px] bg-default border border-subtle rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div className="relative max-h-[90dvh] w-full max-w-[560px] overflow-y-auto rounded-t-2xl border border-subtle border-b-0 bg-default shadow-2xl animate-in fade-in zoom-in duration-200 sm:rounded-xl sm:border-b">
         <form onSubmit={handleContinue}>
           {/* Header */}
-          <div className="px-6 py-6 border-b border-subtle">
-            <h3 className="font-cal text-xl font-semibold text-emphasis">
+          <div className="border-b border-subtle px-4 py-5 sm:px-6 sm:py-6">
+            <h3 className="font-cal text-lg font-semibold text-emphasis sm:text-xl">
               Add a new event type
             </h3>
-            <p className="text-subtle text-sm mt-1">
+            <p className="mt-1 text-sm text-subtle">
               Create a new event type to allow people to book with you.
             </p>
           </div>
 
           {/* Body */}
-          <div ref={parent} className="px-6 py-6 space-y-6">
+          <div ref={parent} className="space-y-5 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-6">
             {/* Title */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-emphasis block">
@@ -72,13 +72,13 @@ export function CreateEventTypeModal({ isOpen, onClose, onContinue, profileSlug 
               <label className="text-sm font-medium text-emphasis block">
                 URL
               </label>
-              <div className="flex rounded-md border border-subtle bg-subtle overflow-hidden focus-within:ring-2 focus-within:ring-black/5 focus-within:border-emphasis">
-                <span className="px-3 py-2 text-sm text-subtle bg-subtle border-r border-subtle whitespace-nowrap">
+              <div className="flex flex-col overflow-hidden rounded-md border border-subtle bg-subtle focus-within:border-emphasis focus-within:ring-2 focus-within:ring-black/5 sm:flex-row">
+                <span className="whitespace-nowrap border-b border-subtle bg-subtle px-3 py-2 text-xs text-subtle sm:border-b-0 sm:border-r sm:text-sm">
                   cal.com/{profileSlug}/
                 </span>
                 <input
                   type="text"
-                  className="flex-1 bg-default px-3 py-2 text-sm outline-none"
+                  className="min-w-0 flex-1 bg-default px-3 py-2 text-sm outline-none"
                   value={slug}
                   onChange={(e) =>
                     setSlug(
@@ -149,17 +149,17 @@ export function CreateEventTypeModal({ isOpen, onClose, onContinue, profileSlug 
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 bg-muted/30 border-t border-subtle flex justify-end gap-3">
+          <div className="flex flex-col-reverse gap-2 border-t border-subtle bg-muted/30 px-4 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-6">
             <button
               type="button"
-              className="btn-secondary"
+              className="btn-secondary w-full sm:w-auto"
               onClick={onClose}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="btn-primary"
+              className="btn-primary w-full sm:w-auto"
             >
               Continue
             </button>

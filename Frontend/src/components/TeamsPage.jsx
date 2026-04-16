@@ -10,8 +10,8 @@ const FEATURES = [
 
 export function TeamsPage() {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center bg-subtle p-8 py-12 lg:p-0">
-      <div className="flex w-full h-auto max-w-4xl gap-2 overflow-hidden rounded-3xl bg-default p-5 md:py-8 md:pl-8 md:pr-0 shadow-sm border border-subtle">
+    <div className="flex flex-1 flex-col items-center justify-center bg-subtle px-3 py-8 sm:px-6 lg:p-0">
+      <div className="flex h-auto w-full max-w-4xl flex-col gap-4 overflow-hidden rounded-2xl border border-subtle bg-default p-4 shadow-sm sm:rounded-3xl sm:p-5 md:flex-row md:gap-2 md:py-8 md:pl-8 md:pr-0">
           
           {/* Left Content */}
           <div className="flex flex-1 flex-col justify-between overflow-hidden">
@@ -29,7 +29,7 @@ export function TeamsPage() {
               </p>
 
               {/* Features List */}
-              <ul className="mt-5 space-y-2.5 hidden md:block">
+              <ul className="mt-5 hidden space-y-2.5 sm:block">
                 {FEATURES.map((feature) => (
                   <li key={feature} className="flex items-center gap-2 text-sm text-subtle">
                     <span className="text-subtle text-lg leading-none mt-[-2px]">•</span>

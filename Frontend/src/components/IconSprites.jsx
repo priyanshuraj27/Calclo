@@ -252,6 +252,10 @@ export function IconSprites() {
   <path d="m22 8-6 4 6 4V8Z"></path>
   <rect x="2" y="6" width="14" height="12" rx="2" ry="2"></rect>
 </symbol>
+<symbol class="lucide lucide-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="x">
+  <path d="M18 6 6 18"></path>
+  <path d="m6 6 12 12"></path>
+</symbol>
 </defs>
 </svg>
 `,

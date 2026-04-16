@@ -92,34 +92,36 @@ export function SchedulesListingPage({ onNavigate }) {
 
   return (
     <div className="flex-1 animate-in fade-in duration-500">
-      <header className="mb-8 flex items-start justify-between gap-4 px-2 sm:px-0">
-        <div>
-          <h1 className="font-cal text-[20px] font-bold leading-tight text-emphasis">
+      <header className="mb-6 flex flex-col gap-4 px-1 sm:mb-8 sm:px-0 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <h1 className="font-cal text-lg font-bold leading-tight text-emphasis sm:text-[20px]">
             Availability
           </h1>
-          <p className="mt-0.5 text-[13px] text-subtle">
+          <p className="mt-0.5 max-w-xl text-[13px] text-subtle">
             Configure times when you are available for bookings.
           </p>
         </div>
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex flex-wrap items-stretch gap-2 pt-0 sm:items-center lg:shrink-0 lg:justify-end lg:pt-1">
           <button
             type="button"
-            className="rounded-md border border-subtle px-3 py-1.5 text-sm font-medium text-emphasis"
+            className="rounded-md border border-subtle px-2.5 py-1.5 text-xs font-medium text-emphasis sm:px-3 sm:text-sm"
           >
             My availability
           </button>
           <button
             type="button"
-            className="rounded-md border border-subtle px-3 py-1.5 text-sm font-medium text-subtle"
+            className="rounded-md border border-subtle px-2.5 py-1.5 text-xs font-medium text-subtle sm:px-3 sm:text-sm"
           >
-            Team availability
+            <span className="sm:hidden">Team</span>
+            <span className="hidden sm:inline">Team availability</span>
           </button>
           <button
+            type="button"
             onClick={() => {
               setNewScheduleName("Working hours");
               setIsNewModalOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-black"
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-black sm:flex-initial"
           >
             <Icon name="plus" className="h-3.5 w-3.5" />
             New
@@ -127,7 +129,7 @@ export function SchedulesListingPage({ onNavigate }) {
         </div>
       </header>
 
-      <div className="bg-default border border-subtle rounded-xl overflow-hidden" ref={parent}>
+      <div className="overflow-visible rounded-xl border border-subtle bg-default -mx-0.5 sm:mx-0" ref={parent}>
         <ul className="divide-y divide-subtle">
           {isLoading
             ? [1, 2, 3].map((i) => (
@@ -147,11 +149,11 @@ export function SchedulesListingPage({ onNavigate }) {
                 <li
                   key={schedule.id}
                   onClick={() => onNavigate(`/availability/${schedule.id}`)}
-                  className="group relative flex items-start justify-between px-4 py-3 hover:bg-muted/10 cursor-pointer transition-colors"
+                  className="group relative flex cursor-pointer flex-col gap-3 px-3 py-4 transition-colors hover:bg-muted/10 sm:flex-row sm:items-start sm:justify-between sm:px-4 sm:py-3"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h2 className="truncate text-sm font-semibold leading-tight text-emphasis">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight text-emphasis sm:flex-none">
                         {schedule.name}
                       </h2>
                       {schedule.isDefault && (
@@ -160,18 +162,19 @@ export function SchedulesListingPage({ onNavigate }) {
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 flex items-center gap-1 text-[12px] text-subtle">
+                    <p className="mt-1 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[12px] text-subtle">
                       <span>{schedule.days},</span>
                       <span>{schedule.time}</span>
                     </p>
-                    <p className="mt-0.5 flex items-center gap-1 text-[12px] text-subtle">
-                      <Icon name="globe" className="h-3.5 w-3.5 opacity-90" />
-                      <span>{schedule.timezone}</span>
+                    <p className="mt-0.5 flex min-w-0 items-center gap-1 text-[12px] text-subtle">
+                      <Icon name="globe" className="h-3.5 w-3.5 shrink-0 opacity-90" />
+                      <span className="truncate">{schedule.timezone}</span>
                     </p>
                   </div>
 
-                  <div className="ml-3 mt-1 flex items-center gap-2">
+                  <div className="relative flex shrink-0 items-center justify-end gap-2 sm:ml-3 sm:mt-1">
                     <button
+                      type="button"
                       className="flex h-9 w-9 items-center justify-center rounded-lg border border-subtle bg-default text-subtle hover:bg-subtle/40"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -184,7 +187,7 @@ export function SchedulesListingPage({ onNavigate }) {
                     </button>
                     {menuOpenId === schedule.id ? (
                       <div
-                        className="absolute right-4 top-12 z-20 w-40 rounded-lg border border-subtle bg-default p-1 shadow-xl"
+                        className="absolute right-0 top-full z-30 mt-1 w-[min(16rem,calc(100vw-2rem))] rounded-lg border border-subtle bg-default p-1 shadow-xl"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
@@ -228,7 +231,7 @@ export function SchedulesListingPage({ onNavigate }) {
       </div>
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] bg-emphasis text-inverted px-4 py-2 rounded-lg shadow-2xl text-sm font-semibold">
+        <div className="fixed bottom-24 left-1/2 z-[200] max-w-[min(calc(100vw-2rem),24rem)] -translate-x-1/2 rounded-lg bg-emphasis px-4 py-2 text-center text-sm font-semibold text-inverted shadow-2xl lg:bottom-6">
           {toast}
         </div>
       )}

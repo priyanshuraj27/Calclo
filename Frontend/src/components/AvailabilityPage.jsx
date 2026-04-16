@@ -570,28 +570,28 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
 
   return (
     <div className="flex flex-col h-full bg-default text-default animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 sm:px-8 py-4 sm:py-6 sticky top-0 bg-default/80 backdrop-blur-md z-50 border-b border-subtle sm:border-none gap-4">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-3">
-             <button onClick={() => onNavigate("/availability")} className="p-1 hover:bg-subtle rounded-md text-subtle">
+      <div className="sticky top-0 z-50 flex flex-col gap-4 border-b border-subtle bg-default/80 px-3 py-4 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6 sm:py-6 lg:border-none lg:px-8">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+             <button type="button" onClick={() => onNavigate("/availability")} className="shrink-0 rounded-md p-1 text-subtle hover:bg-subtle">
                <Icon name="arrow-left" className="h-4 w-4" />
              </button>
              <input
                type="text"
                value={title}
                onChange={(e) => setTitle(e.target.value)}
-               className="font-cal text-xl sm:text-2xl font-bold text-emphasis leading-none bg-transparent outline-none border-b border-transparent hover:border-subtle focus:border-emphasis transition w-[320px] max-w-[70vw]"
+               className="min-w-0 flex-1 border-b border-transparent bg-transparent font-cal text-lg font-bold leading-tight text-emphasis outline-none transition hover:border-subtle focus:border-emphasis sm:text-xl lg:text-2xl"
                aria-label="Schedule name"
              />
           </div>
-          <p className="text-xs sm:text-sm font-medium text-subtle ml-8">{subtitle}</p>
+          <p className="pl-8 text-xs font-medium text-subtle sm:pl-9 sm:text-sm">{subtitle}</p>
         </div>
 
-        <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
-           <div className="flex items-center gap-3 pr-4 border-r border-subtle">
+        <div className="flex w-full flex-wrap items-center justify-between gap-3 sm:w-auto sm:justify-end">
+           <div className="flex items-center gap-2 border-r border-subtle pr-3 sm:gap-3 sm:pr-4">
               <button
                 type="button"
-                className="text-xs sm:text-sm font-semibold text-emphasis hidden xs:inline hover:underline"
+                className="hidden text-xs font-semibold text-emphasis hover:underline sm:inline sm:text-sm"
                 onClick={() => handleDefaultToggle(!isDefault)}
               >
                 {isDefault ? "Reset to default" : "Set as default"}
@@ -602,16 +602,16 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
               <button
                 type="button"
                 onClick={handleDelete}
-                className="p-2.5 bg-[#291415] border border-[#442222] rounded-lg text-[#f87171] hover:bg-[#3d1a1c] transition shadow-sm group"
+                className="rounded-lg border border-[#442222] bg-[#291415] p-2.5 text-[#f87171] transition hover:bg-[#3d1a1c] sm:group"
               >
                 <Icon name="trash" className="h-4 w-4" />
               </button>
-              <div className="w-[1px] h-6 bg-subtle mx-1" />
+              <div className="mx-1 hidden h-6 w-px bg-subtle sm:block" />
               <button
                 type="button"
                 onClick={handleSaveClick}
                 disabled={isSaving}
-                className="btn-primary min-h-[36px] px-5 py-2"
+                className="btn-primary min-h-[36px] px-4 py-2 sm:px-5"
               >
                 {isSaving ? "Saving..." : "Save"}
               </button>
@@ -619,27 +619,27 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
         </div>
       </div>
 
-      <main className="flex-1 overflow-y-auto px-4 sm:px-8 pb-12">
-        <div className="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-[1fr_minmax(260px,320px)] gap-12 lg:items-start">
+      <main className="flex-1 overflow-y-auto px-3 pb-28 sm:px-6 sm:pb-12 lg:px-8">
+        <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-8 sm:gap-10 lg:grid-cols-[1fr_minmax(260px,320px)] lg:items-start lg:gap-12">
           
           <div className="space-y-10">
-            <div className="bg-default border border-subtle rounded-xl p-4 shadow-sm" ref={parent}>
+            <div className="rounded-xl border border-subtle bg-default p-3 shadow-sm sm:p-4" ref={parent}>
               {days.map(day => {
                 const slots = availability[day];
                 const isActive = slots && slots.length > 0;
                 return (
-                  <div key={day} className="flex items-center py-2.5 px-4 group">
-                    <div className="flex items-center gap-4 w-48">
+                  <div key={day} className="group flex flex-col gap-3 border-b border-subtle py-3 last:border-b-0 sm:flex-row sm:items-start sm:gap-4 sm:border-b-0 sm:py-2.5 sm:px-2">
+                    <div className="flex w-full shrink-0 items-center gap-3 sm:w-44 lg:w-48">
                        <Switch checked={isActive} onChange={() => toggleDay(day)} />
                        <span className={`text-sm font-bold ${isActive ? 'text-emphasis' : 'text-subtle'}`}>{day}</span>
                     </div>
                     
-                    <div className="flex-1 flex items-center gap-3">
+                    <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                       {isActive ? (
-                        <div className="flex flex-col gap-2">
+                        <div className="flex min-w-0 flex-1 flex-col gap-2">
                           {(slots || []).map((slot, index) => (
-                            <div key={`${day}-${index}`} className="flex items-center gap-2">
-                              <div className="flex items-center bg-muted/30 border border-subtle rounded-lg px-3 py-1.5 text-sm gap-2">
+                            <div key={`${day}-${index}`} className="flex flex-wrap items-center gap-2">
+                              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 rounded-lg border border-subtle bg-muted/30 px-2 py-1.5 text-sm sm:px-3">
                                 <div className="relative">
                                   <select
                                     className="w-24 appearance-none bg-transparent pr-5 outline-none font-medium text-emphasis"
@@ -730,7 +730,7 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
               })}
             </div>
 
-            <div className="bg-default border border-subtle rounded-xl p-8 space-y-4">
+            <div className="space-y-4 rounded-xl border border-subtle bg-default p-4 sm:p-6 lg:p-8">
                <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-emphasis">Date overrides</h3>
                   <Icon name="info" className="h-3.5 w-3.5 text-subtle" />
@@ -743,7 +743,7 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
                    {overrides.map((ovr) => (
                      <div
                        key={ovr._id}
-                       className="flex items-center justify-between border-b border-subtle px-4 py-3 last:border-b-0"
+                       className="flex flex-col gap-3 border-b border-subtle px-3 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:px-4"
                      >
                        <div>
                          <p className="text-sm font-semibold text-emphasis">
@@ -755,7 +755,7 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
                              : formatOverrideTime(ovr.intervals)}
                          </p>
                        </div>
-                       <div className="flex items-center gap-2">
+                       <div className="flex shrink-0 items-center justify-end gap-2 sm:justify-start">
                          <button
                            type="button"
                            className="p-2 hover:bg-subtle rounded-md text-subtle transition"
@@ -825,9 +825,9 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
         </div>
       </main>
 
-      <div className="fixed bottom-6 right-6">
-         <button type="button" className="p-4 bg-emphasis text-default rounded-full shadow-2xl hover:scale-110 transition active:scale-95">
-            <Icon name="message-square" className="h-6 w-6" />
+      <div className="fixed bottom-24 right-4 z-[90] lg:bottom-6 lg:right-6">
+         <button type="button" className="rounded-full bg-emphasis p-3.5 text-default shadow-2xl transition hover:scale-105 active:scale-95 sm:p-4">
+            <Icon name="message-square" className="h-5 w-5 sm:h-6 sm:w-6" />
          </button>
       </div>
 

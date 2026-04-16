@@ -204,14 +204,14 @@ export function EventTypesPage({ onNavigate }) {
   if (isLoading) {
     return (
       <div className="flex-1">
-        <div className="flex items-center md:mb-6 md:mt-0 lg:mb-8 justify-between">
-           <div className="flex flex-col gap-2">
-              <Skeleton className="h-7 w-48" />
-              <Skeleton className="h-4 w-72" />
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between lg:mb-8">
+           <div className="flex flex-col gap-2 min-w-0">
+              <Skeleton className="h-7 w-48 max-w-full" />
+              <Skeleton className="h-4 w-72 max-w-full" />
            </div>
-           <div className="flex gap-4">
-              <Skeleton className="h-9 w-64 rounded-md" />
-              <Skeleton className="h-9 w-20 rounded-md" />
+           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Skeleton className="h-9 w-full rounded-md sm:w-64" />
+              <Skeleton className="h-9 w-full rounded-md sm:w-20" />
            </div>
         </div>
         <div className="border border-subtle rounded-md bg-default divide-y divide-subtle">
@@ -237,40 +237,41 @@ export function EventTypesPage({ onNavigate }) {
 
   return (
     <div className="flex-1">
-      <div className="flex items-center mb-8">
-        <header className="flex w-full max-w-full items-center justify-between gap-4 px-2 sm:px-0">
+      <div className="mb-6 sm:mb-8">
+        <header className="flex w-full max-w-full flex-col gap-4 px-1 sm:px-0 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
-            <h1 className="font-cal text-[20px] font-bold text-emphasis leading-tight">
+            <h1 className="font-cal text-lg font-bold text-emphasis leading-tight sm:text-[20px]">
               Event types
             </h1>
-            <p className="text-subtle text-[13px] mt-0.5">
+            <p className="mt-0.5 text-[13px] text-subtle">
               Configure different events for people to book on your calendar.
             </p>
           </div>
-          
-          <div className="flex items-center gap-3">
-             <div className="hidden sm:flex items-center bg-transparent border border-subtle rounded-md px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-emphasis transition-all">
-                <Icon name="search" className="h-[14px] w-[14px] text-subtle" />
-                <input 
-                  type="text" 
-                  placeholder="Search" 
-                  className="bg-transparent border-none outline-none text-[13px] px-2 text-emphasis w-32 md:w-36"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-             </div>
-             <button 
-               onClick={() => setIsModalOpen(true)}
-               className="btn-primary flex items-center gap-2 px-3.5 py-2 text-sm"
-             >
-                <Icon name="plus" className="h-4 w-4" />
-                <span>New</span>
-             </button>
+
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
+            <div className="flex w-full items-center rounded-md border border-subtle bg-transparent px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-emphasis sm:max-w-[220px] lg:max-w-none">
+              <Icon name="search" className="h-[14px] w-[14px] shrink-0 text-subtle" />
+              <input
+                type="text"
+                placeholder="Search"
+                className="min-w-0 flex-1 border-none bg-transparent px-2 text-[13px] text-emphasis outline-none"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(true)}
+              className="btn-primary inline-flex w-full shrink-0 items-center justify-center gap-2 px-3.5 py-2 text-sm sm:w-auto"
+            >
+              <Icon name="plus" className="h-4 w-4" />
+              <span>New</span>
+            </button>
           </div>
         </header>
       </div>
 
-      <div className="bg-default border border-[#262626] rounded-xl overflow-visible">
+      <div className="overflow-visible rounded-xl border border-[#262626] bg-default -mx-0.5 sm:mx-0">
         <ul ref={parent} className="divide-y divide-[#1a1a1a] w-full" data-testid="event-types">
           {filtered.length > 0 ? (
             filtered.map((type) => {
@@ -339,7 +340,7 @@ export function EventTypesPage({ onNavigate }) {
       />
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] bg-emphasis text-inverted px-4 py-2 rounded-lg shadow-2xl animate-in slide-in-from-bottom-2 duration-300 flex items-center gap-2">
+        <div className="fixed bottom-24 left-1/2 z-[200] flex max-w-[min(calc(100vw-2rem),28rem)] -translate-x-1/2 animate-in slide-in-from-bottom-2 items-center gap-2 rounded-lg bg-emphasis px-4 py-2 text-inverted shadow-2xl duration-300 lg:bottom-6">
            <Icon name="check" className="h-4 w-4 bg-green-500 rounded-full p-0.5" />
            <span className="text-sm font-semibold">{toast}</span>
         </div>

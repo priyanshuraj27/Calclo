@@ -45,7 +45,7 @@ export function EventTypeCard({ type, profile, onAction, isFirst, isLast }) {
     <li
       className={`group hover:bg-subtle/20 transition-colors ${isDropdownOpen ? 'relative z-40' : ''}`}
     >
-      <div className="relative flex items-center px-4 py-4 sm:px-6">
+      <div className="relative flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:gap-0 sm:px-6">
         <div className="hidden sm:flex absolute -left-4 top-1/2 -translate-y-1/2 flex-col gap-1 opacity-0 pointer-events-none transition-opacity duration-150 group-hover:opacity-100 group-hover:pointer-events-auto">
           <button
             type="button"
@@ -78,7 +78,7 @@ export function EventTypeCard({ type, profile, onAction, isFirst, isLast }) {
         {/* Content — row click opens edit (same as Cal.com) */}
         <button
           type="button"
-          className="flex-1 min-w-0 text-left rounded-lg -my-1 py-1 pr-2 -ml-1 pl-1 hover:bg-subtle/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-emphasis/40"
+          className="-my-1 -ml-1 min-w-0 flex-1 rounded-lg py-1 pl-1 pr-2 text-left hover:bg-subtle/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-emphasis/40 sm:-my-1"
           onClick={() => onAction("edit")}
         >
           <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
@@ -102,7 +102,10 @@ export function EventTypeCard({ type, profile, onAction, isFirst, isLast }) {
         </button>
 
         {/* Actions Container — ref for dropdown dismiss (must not clip menu: parent uses overflow-visible) */}
-        <div ref={actionsRef} className="flex items-center gap-6 shrink-0">
+        <div
+          ref={actionsRef}
+          className="flex shrink-0 items-center justify-between gap-3 border-t border-subtle pt-3 sm:justify-end sm:border-t-0 sm:pt-0 sm:pl-2 sm:gap-4 lg:gap-6"
+        >
            {/* Hidden Label */}
            {!enabled && (
               <span className="hidden sm:block text-[11px] font-extrabold text-[#666] uppercase tracking-widest mr-[-8px]">
