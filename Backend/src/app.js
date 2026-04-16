@@ -28,6 +28,20 @@ app.use(cookieParser());
 
 app.use(requestLogger);
 
+// Platform health checks (Render, etc.) commonly hit "/" with GET/HEAD.
+app.get("/", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "scalar-scheduling-backend",
+  });
+});
+app.head("/", (_req, res) => {
+  res.sendStatus(200);
+});
+app.get("/healthz", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
 app.use("/api/v1/docs", docsRouter);
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/event-types", eventTypeRouter);

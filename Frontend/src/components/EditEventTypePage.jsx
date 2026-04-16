@@ -213,6 +213,10 @@ export function EditEventTypePage({
   const [hostSlug, setHostSlug] = useState(
     import.meta.env.VITE_DEFAULT_HOST_USERNAME || "priyanshu"
   );
+  const publicBookingBase = (
+    import.meta.env.VITE_PUBLIC_BOOKING_BASE_URL || "https://cal.com"
+  ).replace(/\/$/, "");
+  const publicBookingLink = `${publicBookingBase}/${encodeURIComponent(hostSlug)}/${encodeURIComponent(slug)}`;
   const skipPersist = useRef(true);
 
   const [locationType, setLocationType] = useState("cal-video");
@@ -509,7 +513,7 @@ export function EditEventTypePage({
              </div>
              <button
                type="button"
-               onClick={() => onNavigate(`/book/${hostSlug}/${encodeURIComponent(slug)}`)}
+               onClick={() => window.open(publicBookingLink, "_blank", "noopener,noreferrer")}
                className="p-2 hover:bg-subtle rounded-md text-subtle hover:text-emphasis transition group"
                title="Preview"
              >
@@ -518,8 +522,7 @@ export function EditEventTypePage({
              <button
                type="button"
                onClick={() => {
-                 const url = `${window.location.origin}/book/${hostSlug}/${encodeURIComponent(slug)}`;
-                 navigator.clipboard?.writeText(url);
+                 navigator.clipboard?.writeText(publicBookingLink);
                }}
                className="hidden sm:block p-2 hover:bg-subtle rounded-md text-subtle hover:text-emphasis transition"
                title="Copy link"

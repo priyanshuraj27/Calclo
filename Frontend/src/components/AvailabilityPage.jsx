@@ -44,7 +44,17 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
   const [timezone, setTimezone] = useState("Europe/London");
   const [isDefault, setIsDefault] = useState(false);
   const [subtitle, setSubtitle] = useState("Mon - Fri, 9:00 AM - 5:00 PM");
+  const [showBulkDefaultModal, setShowBulkDefaultModal] = useState(false);
+  const [eventTypeChoices, setEventTypeChoices] = useState([]);
+  const [selectedEventTypeIds, setSelectedEventTypeIds] = useState([]);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const skipSave = useRef(true);
+  const [copyModal, setCopyModal] = useState({
+    open: false,
+    sourceDay: "",
+    sourceIndex: 0,
+    selectedDays: [],
+  });
 
   const days = [
     "Sunday",
@@ -153,6 +163,105 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
     });
   };
 
+  const updateSlotAt = (day, index, field, value) => {
+    setAvailability((prev) => {
+      const slots = prev[day] ? [...prev[day]] : [];
+      if (!slots[index]) return prev;
+      slots[index] = { ...slots[index], [field]: value };
+      return { ...prev, [day]: slots };
+    });
+  };
+
+  const addSlot = (day) => {
+    setAvailability((prev) => {
+      const slots = prev[day] ? [...prev[day]] : [];
+      if (!slots.length) {
+        return { ...prev, [day]: [{ from: "9:00am", to: "5:00pm" }] };
+      }
+      const last = slots[slots.length - 1];
+      const nextFrom = last?.to || "5:00pm";
+      slots.push({ from: nextFrom, to: "6:00pm" });
+      return { ...prev, [day]: slots };
+    });
+  };
+
+  const removeSlot = (day, index) => {
+    setAvailability((prev) => {
+      const slots = prev[day] ? [...prev[day]] : [];
+      if (slots.length <= 1) return prev;
+      slots.splice(index, 1);
+      return { ...prev, [day]: slots };
+    });
+  };
+
+  const openCopyModal = (day, index) => {
+    const selected = days.filter((d) => d !== day);
+    setCopyModal({
+      open: true,
+      sourceDay: day,
+      sourceIndex: index,
+      selectedDays: selected,
+    });
+  };
+
+  const closeCopyModal = () => {
+    setCopyModal({
+      open: false,
+      sourceDay: "",
+      sourceIndex: 0,
+      selectedDays: [],
+    });
+  };
+
+  const toggleCopyDay = (day) => {
+    setCopyModal((prev) => ({
+      ...prev,
+      selectedDays: prev.selectedDays.includes(day)
+        ? prev.selectedDays.filter((d) => d !== day)
+        : [...prev.selectedDays, day],
+    }));
+  };
+
+  const toggleCopySelectAll = () => {
+    setCopyModal((prev) => {
+      const eligible = days.filter((d) => d !== prev.sourceDay);
+      const allSelected = eligible.every((d) => prev.selectedDays.includes(d));
+      return {
+        ...prev,
+        selectedDays: allSelected ? [] : eligible,
+      };
+    });
+  };
+
+  const applyCopyTimes = () => {
+    const { sourceDay, sourceIndex, selectedDays } = copyModal;
+    if (!sourceDay || !selectedDays.length) {
+      closeCopyModal();
+      return;
+    }
+    const sourceSlot = availability[sourceDay]?.[sourceIndex];
+    if (!sourceSlot) {
+      closeCopyModal();
+      return;
+    }
+
+    setAvailability((prev) => {
+      const next = { ...prev };
+      for (const day of selectedDays) {
+        const current = next[day] ? [...next[day]] : [];
+        const exists = current.some(
+          (s) => s.from === sourceSlot.from && s.to === sourceSlot.to
+        );
+        if (!exists) {
+          current.push({ ...sourceSlot });
+        }
+        next[day] = current.length ? current : [{ ...sourceSlot }];
+      }
+      return next;
+    });
+    closeCopyModal();
+  };
+
   const handleSaveClick = async () => {
     if (scheduleId === "new") {
       try {
@@ -202,6 +311,77 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
     }
   };
 
+  const loadEventTypeChoices = useCallback(async () => {
+    try {
+      const rows = await apiData("/api/v1/event-types", { noCache: true });
+      const items = (rows || []).map((r) => ({
+        id: r._id,
+        title: r.title || "Untitled event type",
+        availabilityScheduleId:
+          typeof r.availabilityScheduleId === "object"
+            ? r.availabilityScheduleId?._id
+            : r.availabilityScheduleId,
+      }));
+      setEventTypeChoices(items);
+      setSelectedEventTypeIds(items.map((i) => i.id));
+    } catch {
+      setEventTypeChoices([]);
+      setSelectedEventTypeIds([]);
+    }
+  }, []);
+
+  const handleDefaultToggle = async (next) => {
+    if (!next) {
+      setIsDefault(false);
+      return;
+    }
+    setIsDefault(true);
+    if (!isPersistedId(scheduleId)) return;
+    await loadEventTypeChoices();
+    setShowBulkDefaultModal(true);
+  };
+
+  const isAllSelected =
+    eventTypeChoices.length > 0 &&
+    selectedEventTypeIds.length === eventTypeChoices.length;
+
+  const toggleSelectAll = () => {
+    setSelectedEventTypeIds((prev) =>
+      prev.length === eventTypeChoices.length
+        ? []
+        : eventTypeChoices.map((e) => e.id)
+    );
+  };
+
+  const toggleEventTypeChoice = (id) => {
+    setSelectedEventTypeIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const applyBulkDefaultUpdate = async () => {
+    if (!isPersistedId(scheduleId)) {
+      setShowBulkDefaultModal(false);
+      return;
+    }
+    setIsBulkUpdating(true);
+    try {
+      await Promise.all(
+        selectedEventTypeIds.map((eventTypeId) =>
+          apiData(`/api/v1/event-types/${eventTypeId}`, {
+            method: "PATCH",
+            json: { availabilityScheduleId: scheduleId },
+          })
+        )
+      );
+      setShowBulkDefaultModal(false);
+    } catch {
+      // Keep modal open so user can retry.
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-default text-default animate-in fade-in duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 sm:px-8 py-4 sm:py-6 sticky top-0 bg-default/80 backdrop-blur-md z-50 border-b border-subtle sm:border-none gap-4">
@@ -223,8 +403,14 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
 
         <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
            <div className="flex items-center gap-3 pr-4 border-r border-subtle">
-              <span className="text-xs sm:text-sm font-semibold text-emphasis hidden xs:inline">Set as default</span>
-              <Switch checked={isDefault} onChange={setIsDefault} />
+              <button
+                type="button"
+                className="text-xs sm:text-sm font-semibold text-emphasis hidden xs:inline hover:underline"
+                onClick={() => handleDefaultToggle(!isDefault)}
+              >
+                {isDefault ? "Reset to default" : "Set as default"}
+              </button>
+              <Switch checked={isDefault} onChange={handleDefaultToggle} />
            </div>
            <div className="flex items-center gap-2">
               <button
@@ -263,31 +449,57 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
                     
                     <div className="flex-1 flex items-center gap-3">
                       {isActive ? (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center bg-muted/30 border border-subtle rounded-lg px-3 py-1.5 text-sm gap-2">
-                               <input
-                                 type="text"
-                                 className="w-16 bg-transparent outline-none font-medium text-emphasis"
-                                 value={slots[0]?.from || "9:00am"}
-                                 onChange={(e) => updateSlot(day, "from", e.target.value)}
-                               />
-                               <span className="text-subtle">–</span>
-                               <input
-                                 type="text"
-                                 className="w-16 bg-transparent outline-none font-medium text-emphasis"
-                                 value={slots[0]?.to || "5:00pm"}
-                                 onChange={(e) => updateSlot(day, "to", e.target.value)}
-                               />
+                        <div className="flex flex-col gap-2">
+                          {(slots || []).map((slot, index) => (
+                            <div key={`${day}-${index}`} className="flex items-center gap-2">
+                              <div className="flex items-center bg-muted/30 border border-subtle rounded-lg px-3 py-1.5 text-sm gap-2">
+                                <input
+                                  type="text"
+                                  className="w-16 bg-transparent outline-none font-medium text-emphasis"
+                                  value={slot?.from || "9:00am"}
+                                  onChange={(e) =>
+                                    updateSlotAt(day, index, "from", e.target.value)
+                                  }
+                                />
+                                <span className="text-subtle">–</span>
+                                <input
+                                  type="text"
+                                  className="w-16 bg-transparent outline-none font-medium text-emphasis"
+                                  value={slot?.to || "5:00pm"}
+                                  onChange={(e) =>
+                                    updateSlotAt(day, index, "to", e.target.value)
+                                  }
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                className="p-2 hover:bg-subtle rounded-md text-subtle transition"
+                                onClick={() => addSlot(day)}
+                                title="Add time range"
+                              >
+                                <Icon name="plus" className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                className="p-2 hover:bg-subtle rounded-md text-subtle transition"
+                                onClick={() => openCopyModal(day, index)}
+                                title="Copy times to"
+                              >
+                                <Icon name="copy" className="h-3.5 w-3.5" />
+                              </button>
+                              {slots.length > 1 ? (
+                                <button
+                                  type="button"
+                                  className="p-2 hover:bg-subtle rounded-md text-subtle transition"
+                                  onClick={() => removeSlot(day, index)}
+                                  title="Delete time range"
+                                >
+                                  <Icon name="trash" className="h-3.5 w-3.5" />
+                                </button>
+                              ) : null}
                             </div>
-                            <button type="button" className="p-2 hover:bg-subtle rounded-md text-subtle transition">
-                               <Icon name="plus" className="h-3.5 w-3.5" />
-                            </button>
-                            <button type="button" className="p-2 hover:bg-subtle rounded-md text-subtle transition">
-                               <Icon name="copy" className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </>
+                          ))}
+                        </div>
                       ) : (
                         <div className="h-9" />
                       )}
@@ -354,6 +566,118 @@ export function AvailabilityPage({ onNavigate, scheduleId, initialName }) {
             <Icon name="message-square" className="h-6 w-6" />
          </button>
       </div>
+
+      {showBulkDefaultModal ? (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
+            onClick={() => setShowBulkDefaultModal(false)}
+          />
+          <div className="relative w-full max-w-[560px] overflow-hidden rounded-xl border border-subtle bg-default shadow-2xl">
+            <div className="px-6 py-6 border-b border-subtle">
+              <h3 className="font-cal text-2xl font-bold text-emphasis">
+                Bulk update existing event types
+              </h3>
+              <p className="mt-1 text-sm text-subtle">
+                Update the schedules for the selected event types
+              </p>
+              <div className="mt-4 space-y-2">
+                <label className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-emphasis hover:bg-subtle/30">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    onChange={toggleSelectAll}
+                  />
+                  <span>Select all</span>
+                </label>
+                <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
+                  {eventTypeChoices.map((item) => (
+                    <label
+                      key={item.id}
+                      className="flex items-center gap-2 rounded-md border border-subtle bg-subtle/20 px-3 py-2 text-sm text-emphasis"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedEventTypeIds.includes(item.id)}
+                        onChange={() => toggleEventTypeChoice(item.id)}
+                      />
+                      <span className="truncate">{item.title}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 bg-muted/20 px-6 py-4">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowBulkDefaultModal(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={isBulkUpdating}
+                onClick={applyBulkDefaultUpdate}
+              >
+                {isBulkUpdating ? "Updating..." : "Update"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {copyModal.open ? (
+        <div className="fixed inset-0 z-[240] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
+            onClick={closeCopyModal}
+          />
+          <div className="relative w-full max-w-[420px] overflow-hidden rounded-xl border border-subtle bg-default shadow-2xl">
+            <div className="border-b border-subtle px-5 py-4">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-subtle">
+                Copy times to
+              </h3>
+              <div className="mt-4 space-y-2">
+                <label className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-emphasis hover:bg-subtle/30">
+                  <input
+                    type="checkbox"
+                    checked={days
+                      .filter((d) => d !== copyModal.sourceDay)
+                      .every((d) => copyModal.selectedDays.includes(d))}
+                    onChange={toggleCopySelectAll}
+                  />
+                  <span>Select all</span>
+                </label>
+                {days
+                  .filter((d) => d !== copyModal.sourceDay)
+                  .map((day) => (
+                    <label
+                      key={day}
+                      className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-emphasis hover:bg-subtle/30"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={copyModal.selectedDays.includes(day)}
+                        onChange={() => toggleCopyDay(day)}
+                      />
+                      <span>{day}</span>
+                    </label>
+                  ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 bg-muted/20 px-5 py-4">
+              <button type="button" className="btn-secondary" onClick={closeCopyModal}>
+                Cancel
+              </button>
+              <button type="button" className="btn-primary" onClick={applyCopyTimes}>
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

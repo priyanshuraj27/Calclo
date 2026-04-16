@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Icon } from './Icon';
+import React, { useState, useEffect, useCallback } from "react";
+import { Icon } from "./Icon";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { apiData } from "../api/client.js";
 import { summarizeDays, summarizeTime } from "../api/scheduleMappers.js";
@@ -11,6 +11,7 @@ export function SchedulesListingPage({ onNavigate }) {
   const [menuOpenId, setMenuOpenId] = useState(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [newScheduleName, setNewScheduleName] = useState("Working hours");
+  const [isLoading, setIsLoading] = useState(true);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -18,6 +19,7 @@ export function SchedulesListingPage({ onNavigate }) {
   };
 
   const load = useCallback(async () => {
+    setIsLoading(true);
     try {
       const rows = await apiData("/api/v1/schedules");
       setSchedules(
@@ -34,6 +36,8 @@ export function SchedulesListingPage({ onNavigate }) {
     } catch (e) {
       showToast(e.message || "Failed to load schedules");
       setSchedules([]);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
@@ -87,93 +91,140 @@ export function SchedulesListingPage({ onNavigate }) {
   };
 
   return (
-    <div className="flex-1 lg:pr-6 animate-in fade-in duration-500">
-      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-2 sm:px-0">
+    <div className="flex-1 animate-in fade-in duration-500">
+      <header className="mb-8 flex items-start justify-between gap-4 px-2 sm:px-0">
         <div>
-          <h1 className="font-cal text-2xl font-bold text-emphasis">Availability</h1>
-          <p className="text-sm text-subtle">Manage your availability schedules.</p>
+          <h1 className="font-cal text-[20px] font-bold leading-tight text-emphasis">
+            Availability
+          </h1>
+          <p className="mt-0.5 text-[13px] text-subtle">
+            Configure times when you are available for bookings.
+          </p>
         </div>
-        <button 
-          onClick={() => {
-            setNewScheduleName("Working hours");
-            setIsNewModalOpen(true);
-          }}
-          className="btn-primary flex items-center gap-2 px-4 py-2 text-sm font-medium shadow-sm transition-all active:scale-95"
-        >
-          <Icon name="plus" className="h-4 w-4" />
-          <span>New</span>
-        </button>
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            className="rounded-md border border-subtle px-3 py-1.5 text-sm font-medium text-emphasis"
+          >
+            My availability
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-subtle px-3 py-1.5 text-sm font-medium text-subtle"
+          >
+            Team availability
+          </button>
+          <button
+            onClick={() => {
+              setNewScheduleName("Working hours");
+              setIsNewModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-black"
+          >
+            <Icon name="plus" className="h-3.5 w-3.5" />
+            New
+          </button>
+        </div>
       </header>
 
-      <div className="bg-default border border-subtle rounded-xl shadow-sm" ref={parent}>
+      <div className="bg-default border border-subtle rounded-xl overflow-hidden" ref={parent}>
         <ul className="divide-y divide-subtle">
-          {schedules.map((schedule) => (
-            <li 
-              key={schedule.id}
-              onClick={() => onNavigate(`/availability/${schedule.id}`)}
-              className="group relative flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 sm:px-6 hover:bg-muted/10 cursor-pointer transition-colors"
-            >
-              <div className="flex items-center gap-4 min-w-0">
-                <div className="p-2.5 bg-subtle rounded-lg border border-subtle group-hover:border-emphasis transition-colors">
-                  <Icon name="calendar" className="h-5 w-5 text-emphasis" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-bold text-emphasis truncate">{schedule.name}</h2>
-                    {schedule.isDefault && (
-                      <span className="px-1.5 py-0.5 rounded-md bg-subtle text-[10px] font-bold text-subtle uppercase tracking-wider">Default</span>
-                    )}
-                  </div>
-                  <p className="text-xs text-subtle mt-1 flex items-center gap-3">
-                    <span className="flex items-center gap-1"><Icon name="clock" className="h-3 w-3" /> {schedule.days}, {schedule.time}</span>
-                    <span className="flex items-center gap-1"><Icon name="globe" className="h-3 w-3" /> {schedule.timezone}</span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 mt-4 sm:mt-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button 
-                   className="btn-icon-secondary"
-                   onClick={(e) => {
-                     e.stopPropagation();
-                     setMenuOpenId((prev) => (prev === schedule.id ? null : schedule.id));
-                   }}
+          {isLoading
+            ? [1, 2, 3].map((i) => (
+                <li
+                  key={`sk-${i}`}
+                  className="flex items-start justify-between px-4 py-5"
                 >
-                  <Icon name="ellipsis" className="h-4 w-4" />
-                </button>
-                {menuOpenId === schedule.id ? (
-                  <div
-                    className="absolute right-4 top-12 z-20 w-40 rounded-lg border border-subtle bg-default p-1 shadow-xl"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-emphasis hover:bg-subtle/40"
-                      onClick={() => {
-                        setMenuOpenId(null);
-                        duplicateSchedule(schedule);
-                      }}
-                    >
-                      <Icon name="copy" className="h-4 w-4" />
-                      Duplicate
-                    </button>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-500 hover:bg-subtle/40"
-                      onClick={() => {
-                        setMenuOpenId(null);
-                        deleteSchedule(schedule);
-                      }}
-                    >
-                      <Icon name="trash" className="h-4 w-4" />
-                      Delete
-                    </button>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-5 w-44 rounded bg-subtle/40 animate-pulse" />
+                    <div className="h-4 w-64 rounded bg-subtle/30 animate-pulse" />
+                    <div className="h-4 w-40 rounded bg-subtle/30 animate-pulse" />
+                    </div>
+                  <div className="ml-3 h-9 w-9 shrink-0 rounded-lg border border-subtle bg-subtle/30 animate-pulse" />
+                </li>
+              ))
+            : schedules.map((schedule) => (
+                <li
+                  key={schedule.id}
+                  onClick={() => onNavigate(`/availability/${schedule.id}`)}
+                  className="group relative flex items-start justify-between px-4 py-3 hover:bg-muted/10 cursor-pointer transition-colors"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h2 className="truncate text-sm font-semibold leading-tight text-emphasis">
+                        {schedule.name}
+                      </h2>
+                      {schedule.isDefault && (
+                        <span className="rounded-md bg-subtle px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-subtle">
+                          Default
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 flex items-center gap-1 text-[12px] text-subtle">
+                      <span>{schedule.days},</span>
+                      <span>{schedule.time}</span>
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1 text-[12px] text-subtle">
+                      <Icon name="globe" className="h-3.5 w-3.5 opacity-90" />
+                      <span>{schedule.timezone}</span>
+                    </p>
                   </div>
-                ) : null}
-              </div>
-            </li>
-          ))}
+
+                  <div className="ml-3 mt-1 flex items-center gap-2">
+                    <button
+                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-subtle bg-default text-subtle hover:bg-subtle/40"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuOpenId((prev) =>
+                          prev === schedule.id ? null : schedule.id
+                        );
+                      }}
+                    >
+                      <Icon name="ellipsis" className="h-4 w-4" />
+                    </button>
+                    {menuOpenId === schedule.id ? (
+                      <div
+                        className="absolute right-4 top-12 z-20 w-40 rounded-lg border border-subtle bg-default p-1 shadow-xl"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-emphasis hover:bg-subtle/40"
+                          onClick={() => {
+                            setMenuOpenId(null);
+                            duplicateSchedule(schedule);
+                          }}
+                        >
+                          <Icon name="copy" className="h-4 w-4" />
+                          Duplicate
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-500 hover:bg-subtle/40"
+                          onClick={() => {
+                            setMenuOpenId(null);
+                            deleteSchedule(schedule);
+                          }}
+                        >
+                          <Icon name="trash" className="h-4 w-4" />
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
         </ul>
+      </div>
+
+      <div className="py-4 text-center text-sm text-subtle">
+        Temporarily out-of-office?{" "}
+        <button
+          type="button"
+          className="font-semibold text-emphasis underline underline-offset-2 hover:opacity-80"
+        >
+          Add a redirect
+        </button>
       </div>
 
       {toast && (

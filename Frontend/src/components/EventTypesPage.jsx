@@ -48,6 +48,12 @@ export function EventTypesPage({ onNavigate }) {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const publicBookingBase = (
+    import.meta.env.VITE_PUBLIC_BOOKING_BASE_URL || "https://calclo.priyanshu.tech"
+  ).replace(/\/$/, "");
+  const buildPublicBookingLink = (host, slug) =>
+    `${publicBookingBase}/${encodeURIComponent(host)}/${encodeURIComponent(slug)}`;
+
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -152,10 +158,10 @@ export function EventTypesPage({ onNavigate }) {
         showToast(e.message || "Duplicate failed");
       }
     } else if (action === "preview") {
-      const url = `${window.location.origin}/book/${encodeURIComponent(profile.slug)}/${encodeURIComponent(type.slug)}`;
+      const url = buildPublicBookingLink(profile.slug, type.slug);
       window.open(url, "_blank", "noopener,noreferrer");
     } else if (action === "copy-link") {
-      const url = `${window.location.origin}/book/${encodeURIComponent(profile.slug)}/${encodeURIComponent(type.slug)}`;
+      const url = buildPublicBookingLink(profile.slug, type.slug);
       try {
         await navigator.clipboard.writeText(url);
         showToast("Booking link copied");

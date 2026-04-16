@@ -25,20 +25,19 @@ export function EventTypeCard({ type, profile, onAction, isFirst, isLast }) {
 
   useEffect(() => {
     if (!isDropdownOpen) return;
-    let cleanup = () => {};
-    const timer = window.setTimeout(() => {
-      const onPointerDown = (e) => {
-        if (actionsRef.current && !actionsRef.current.contains(e.target)) {
-          setIsDropdownOpen(false);
-        }
-      };
-      document.addEventListener("pointerdown", onPointerDown, true);
-      cleanup = () =>
-        document.removeEventListener("pointerdown", onPointerDown, true);
-    }, 0);
+    const onDocMouseDown = (e) => {
+      if (actionsRef.current && !actionsRef.current.contains(e.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setIsDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
     return () => {
-      window.clearTimeout(timer);
-      cleanup();
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
     };
   }, [isDropdownOpen]);
 
@@ -118,7 +117,7 @@ export function EventTypeCard({ type, profile, onAction, isFirst, isLast }) {
                 onChange={(val) => { setEnabled(val); onAction('update', val); }} 
               />
               
-              <div className="hidden sm:flex items-center rounded-lg border border-subtle overflow-hidden divide-x divide-subtle">
+              <div className="hidden sm:flex items-center rounded-lg border border-subtle overflow-visible divide-x divide-subtle">
                  <button
                     type="button"
                     className="p-2 bg-transparent hover:bg-subtle/50 text-subtle transition group"
